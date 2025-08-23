@@ -77,14 +77,39 @@ INSERT INTO search_assignees (assignee_name) VALUES
 
 ## 🚀 Streamlit Cloud設定
 
-### 1. Secrets設定
+### 1. 正しいAPIキーの取得
+
+**Supabaseダッシュボードから正しいAPIキーを取得**:
+
+1. [Supabase Dashboard](https://app.supabase.com) にアクセス
+2. プロジェクトを選択
+3. "Settings" → "API" をクリック
+4. "Project API keys" セクションから以下をコピー:
+   - **Project URL**: `https://xxxxx.supabase.co`
+   - **anon public**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` (長いJWTトークン)
+
+### 2. Streamlit Cloud Secrets設定
 
 Streamlit Cloud管理画面の "Secrets" タブで以下を設定：
 
 ```toml
-SUPABASE_URL = "https://your-project-id.supabase.co"
-SUPABASE_ANON_KEY = "your-anon-key"
+SUPABASE_URL = "https://wsljomxsvaxzweooixbv.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzbGpvbXhzdmF4endlb29peGJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjEzNzQwMjEsImV4cCI6MjAzNjk1MDAyMX0.Yh8lnfZeQ-2wHd4k7ZbXz2q8vCJH5QC3Fy1OEBvADdc"
 ```
+
+**⚠️ 注意**: 上記のキーはサンプルです。実際のキーはSupabaseダッシュボードから取得してください。
+
+### 3. API キーの形式確認
+
+**正しいanon keyの特徴**:
+- `eyJ` で始まる
+- 非常に長い文字列（200文字以上）
+- JWT (JSON Web Token) 形式
+- ピリオド（.）で3つの部分に分かれている
+
+**間違ったキーの例**:
+- `sb_publishable_` で始まるキー（古い形式）
+- 短い文字列
 
 ### 2. アプリ再起動
 
