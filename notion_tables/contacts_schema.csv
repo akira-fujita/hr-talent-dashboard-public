@@ -1,0 +1,26 @@
+カラム名,データ型,制約,NULL許可,デフォルト値,説明
+contact_id,BIGSERIAL,PRIMARY KEY,NOT NULL,nextval('contacts_contact_id_seq'::regclass),コンタクトID（自動採番）
+target_company_id,BIGINT,FOREIGN KEY,NOT NULL,-,所属企業ID（target_companies参照）
+full_name,VARCHAR(255),NOT NULL,NOT NULL,-,フルネーム
+last_name,VARCHAR(100),-,YES,-,姓
+first_name,VARCHAR(100),-,YES,-,名
+furigana,VARCHAR(255),-,YES,-,ふりがな（フル）
+furigana_last_name,VARCHAR(100),-,YES,-,姓（ふりがな）
+furigana_first_name,VARCHAR(100),-,YES,-,名（ふりがな）
+department_name,VARCHAR(255),-,YES,-,部署名
+position_name,VARCHAR(255),-,YES,-,役職名
+estimated_age,VARCHAR(50),-,YES,-,推定年齢
+profile,TEXT,-,YES,-,プロフィール
+url,VARCHAR(500),URL形式,YES,-,プロフィールURL
+screening_status,VARCHAR(100),-,YES,-,スクリーニングステータス
+primary_screening_comment,TEXT,-,YES,-,一次スクリーニングコメント
+priority_id,BIGINT,FOREIGN KEY,YES,-,優先度ID（priority_levels参照）
+name_search_key,VARCHAR(255),-,YES,-,名前検索キー
+work_comment,TEXT,-,YES,-,業務コメント
+search_assignee_id,BIGINT,FOREIGN KEY,YES,-,検索担当者ID（search_assignees参照）
+search_date,DATE,-,YES,-,検索実施日
+email_trial_history,TEXT,-,YES,-,メール送信履歴
+scrutiny_memo,TEXT,-,YES,-,精査メモ
+department_id,BIGINT,FOREIGN KEY,YES,-,部署ID（departments参照）
+created_at,TIMESTAMP,DEFAULT,YES,CURRENT_TIMESTAMP,作成日時
+updated_at,TIMESTAMP,DEFAULT,YES,CURRENT_TIMESTAMP,更新日時

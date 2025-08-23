@@ -1,0 +1,8 @@
+カラム名,データ型,制約,NULL許可,デフォルト値,説明
+project_id,BIGSERIAL,PRIMARY KEY,NOT NULL,nextval('projects_project_id_seq'::regclass),プロジェクトID（自動採番）
+project_name,VARCHAR(255),NOT NULL,NOT NULL,-,プロジェクト名
+target_company_id,BIGINT,FOREIGN KEY,NOT NULL,-,対象企業ID（target_companies参照）
+department_id,BIGINT,FOREIGN KEY,YES,-,部署ID（departments参照）
+project_status,VARCHAR(100),-,YES,-,プロジェクトステータス
+created_at,TIMESTAMP,DEFAULT,YES,CURRENT_TIMESTAMP,作成日時
+updated_at,TIMESTAMP,DEFAULT,YES,CURRENT_TIMESTAMP,更新日時

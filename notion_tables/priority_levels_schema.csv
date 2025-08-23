@@ -1,0 +1,6 @@
+カラム名,データ型,制約,NULL許可,デフォルト値,説明
+priority_id,BIGSERIAL,PRIMARY KEY,NOT NULL,nextval('priority_levels_priority_id_seq'::regclass),優先度ID（自動採番）
+priority_name,VARCHAR(100),NOT NULL,NOT NULL,-,優先度名
+priority_value,NUMERIC(3,1),NOT NULL,NOT NULL,-,"優先度値（1.0-5.0）"
+description,TEXT,-,YES,-,優先度の説明
+created_at,TIMESTAMP,DEFAULT,YES,CURRENT_TIMESTAMP,作成日時

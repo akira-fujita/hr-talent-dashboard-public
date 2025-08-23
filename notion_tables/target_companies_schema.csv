@@ -1,0 +1,16 @@
+カラム名,データ型,制約,NULL許可,デフォルト値,説明
+target_company_id,BIGSERIAL,PRIMARY KEY,NOT NULL,nextval('target_companies_target_company_id_seq'::regclass),企業ID（自動採番）
+company_name,VARCHAR(255),NOT NULL,NOT NULL,-,企業名
+company_url,VARCHAR(500),URL形式チェック,YES,-,企業の公式ウェブサイトURL
+email_searched,DATE,-,YES,-,メール検索実施日
+linkedin_searched,DATE,-,YES,-,LinkedIn検索実施日
+homepage_searched,DATE,-,YES,-,ホームページ検索実施日
+eight_search,DATE,-,YES,-,Eight検索実施日
+keyword_searches,JSONB,-,YES,-,キーワード検索履歴（最大5回分）
+other_searches,JSONB,-,YES,-,その他検索履歴（最大3回分）
+email_search_patterns,JSONB,-,YES,-,メール検索パターン配列
+confirmed_emails,JSONB,-,YES,-,確認済みメールアドレス情報
+misdelivery_emails,JSONB,-,YES,-,誤送信履歴
+email_search_memo,TEXT,-,YES,-,メール検索の備考・メモ
+created_at,TIMESTAMP,DEFAULT,YES,CURRENT_TIMESTAMP,作成日時
+updated_at,TIMESTAMP,DEFAULT,YES,CURRENT_TIMESTAMP,更新日時

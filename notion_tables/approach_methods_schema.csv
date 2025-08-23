@@ -1,0 +1,5 @@
+カラム名,データ型,制約,NULL許可,デフォルト値,説明
+method_id,BIGSERIAL,PRIMARY KEY,NOT NULL,nextval('approach_methods_method_id_seq'::regclass),手法ID（自動採番）
+method_name,VARCHAR(255),NOT NULL,NOT NULL,-,アプローチ手法名
+description,TEXT,-,YES,-,手法の説明
+created_at,TIMESTAMP,DEFAULT,YES,CURRENT_TIMESTAMP,作成日時
