@@ -2265,9 +2265,27 @@ def show_projects_edit():
                     st.markdown("**🎯 企業ごとのターゲット部署選択**")
                     st.markdown("*各企業に対してターゲット部署を個別に設定できます*")
                     
+                    # デバッグ用: 選択された企業一覧を表示
+                    st.info(f"選択された企業: {', '.join(selected_companies)}")
+                    
+                    # デバッグ用: マスターデータの状況確認
+                    if not masters['target_companies'].empty:
+                        available_companies = masters['target_companies']['company_name'].tolist()
+                        st.success(f"マスター企業: {', '.join(available_companies[:5])}{'...' if len(available_companies) > 5 else ''}")
+                        
+                        # デバッグ用: multiselect widget の実際の選択値確認
+                        st.warning(f"multiselect実際の値: {repr(selected_companies)}")
+                        
+                        # デバッグ用: multiselect のデフォルト値確認
+                        st.error(f"current_companies: {repr(current_companies)}")
+                    else:
+                        st.warning("マスター企業データが空です")
+                    
                     # 企業ごとに部署選択UIを動的生成
                     for i, company in enumerate(selected_companies):
                         with st.container():
+                            # デバッグ用: ループの各企業名を確認
+                            st.info(f"Loop {i}: company = {repr(company)}")
                             st.markdown(f"**🏢 {company}**")
                             current_dept = current_company_departments.get(company)
                             
