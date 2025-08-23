@@ -16,9 +16,9 @@
 
 ## 🌐 デモサイト
 
-[**📱 ライブデモを見る**](https://your-app-url.streamlit.app) *(Streamlit Cloudでホスト)*
+[**📱 ライブデモを見る**](https://akira-fujita-test-hr-dashboard-app-2rwmjj.streamlit.app) *(Streamlit Cloudでホスト)*
 
-*デモでは全ての機能をサンプルデータで体験できます*
+*現在サンプルデータモードで動作中 - 全ての機能をお試しいただけます*
 
 ### 主な機能
 - 📊 **ダッシュボード**: KPI表示、可視化分析
