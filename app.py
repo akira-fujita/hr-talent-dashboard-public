@@ -2338,32 +2338,32 @@ def show_projects_edit():
                 # 予約スペース（col2は今後必要に応じて使用）
                 pass
                 
-        headcount_value = selected_project.get('required_headcount')
-        if pd.isna(headcount_value) or headcount_value is None:
-            headcount_value = 1
-        required_headcount = st.number_input("必要人数", min_value=1, value=int(headcount_value))
-        employment_type = st.selectbox("雇用形態", ["", "正社員", "契約社員", "業務委託", "派遣"],
-                                     index=["", "正社員", "契約社員", "業務委託", "派遣"].index(selected_project.get('employment_type', '')) if selected_project.get('employment_type') in ["", "正社員", "契約社員", "業務委託", "派遣"] else 0)
-                
-        st.markdown("#### 期間・条件")
-        col3, col4 = st.columns(2)
-        
-        with col3:
-            # 契約開始日
-            current_start_date = selected_project.get('contract_start_date')
-            if current_start_date:
-                try:
-                    contract_start_date = st.date_input("契約開始日", value=pd.to_datetime(current_start_date).date())
-                except:
-                    contract_start_date = st.date_input("契約開始日", value=None)
-            else:
-                contract_start_date = st.date_input("契約開始日", value=None)
+            headcount_value = selected_project.get('required_headcount')
+            if pd.isna(headcount_value) or headcount_value is None:
+                headcount_value = 1
+            required_headcount = st.number_input("必要人数", min_value=1, value=int(headcount_value))
+            employment_type = st.selectbox("雇用形態", ["", "正社員", "契約社員", "業務委託", "派遣"],
+                                         index=["", "正社員", "契約社員", "業務委託", "派遣"].index(selected_project.get('employment_type', '')) if selected_project.get('employment_type') in ["", "正社員", "契約社員", "業務委託", "派遣"] else 0)
+                    
+            st.markdown("#### 期間・条件")
+            col3, col4 = st.columns(2)
             
-            co_manager = st.text_input("担当CO", value=selected_project.get('co_manager', ''))
-            min_age_value = selected_project.get('min_age')
-            if pd.isna(min_age_value) or min_age_value is None:
-                min_age_value = 28
-            min_age = st.number_input("年齢下限", min_value=18, max_value=100, value=int(min_age_value))
+            with col3:
+                # 契約開始日
+                current_start_date = selected_project.get('contract_start_date')
+                if current_start_date:
+                    try:
+                        contract_start_date = st.date_input("契約開始日", value=pd.to_datetime(current_start_date).date())
+                    except:
+                        contract_start_date = st.date_input("契約開始日", value=None)
+                else:
+                    contract_start_date = st.date_input("契約開始日", value=None)
+                
+                co_manager = st.text_input("担当CO", value=selected_project.get('co_manager', ''))
+                min_age_value = selected_project.get('min_age')
+                if pd.isna(min_age_value) or min_age_value is None:
+                    min_age_value = 28
+                min_age = st.number_input("年齢下限", min_value=18, max_value=100, value=int(min_age_value))
                 
             with col4:
                 # 契約終了日
