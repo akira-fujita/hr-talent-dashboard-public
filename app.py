@@ -2231,14 +2231,100 @@ def show_projects_edit():
             elif isinstance(ptc_list, dict) and ptc_list.get('target_companies'):
                 current_companies = [ptc_list['target_companies']['company_name']]
         
-        if not masters['target_companies'].empty:
-            company_options = masters['target_companies']['company_name'].tolist()
-            selected_companies = st.multiselect("ターゲット企業", company_options, default=current_companies, help="複数の企業を選択できます", key=f"edit_companies_{project_id}")
-        else:
-            company_input = st.text_input("企業名", value=','.join(current_companies), placeholder="カンマ区切りで複数入力可能")
-            selected_companies = [c.strip() for c in company_input.split(',') if c.strip()] if company_input else []
-        
+        # 企業ごとの部署選択（編集用）の事前準備
+        current_company_departments = {}
+        if 'project_target_companies' in selected_project and selected_project['project_target_companies']:
+            ptc_list = selected_project['project_target_companies']
+            if isinstance(ptc_list, list):
+                for ptc in ptc_list:
+                    if ptc.get('target_companies'):
+                        company_name = ptc['target_companies']['company_name']
+                        dept_name = ptc.get('departments', {}).get('department_name') if ptc.get('departments') else None
+                        current_company_departments[company_name] = dept_name
+                        
         with st.form("edit_project_form"):
+            # 企業選択
+            if not masters['target_companies'].empty:
+                company_options = masters['target_companies']['company_name'].tolist()
+                selected_companies = st.multiselect("ターゲット企業", company_options, default=current_companies, help="複数の企業を選択できます", key=f"edit_companies_{project_id}")
+            else:
+                company_input = st.text_input("企業名", value=','.join(current_companies), placeholder="カンマ区切りで複数入力可能")
+                selected_companies = [c.strip() for c in company_input.split(',') if c.strip()] if company_input else []
+            
+            # 企業ごとの部署選択
+            company_departments = {}
+            if selected_companies:
+                st.markdown("**🎯 企業ごとのターゲット部署選択**")
+                st.markdown("*各企業に対してターゲット部署を個別に設定できます*")
+                
+                # 企業ごとに部署選択UIを動的生成
+                for i, company in enumerate(selected_companies):
+                    with st.container():
+                        st.markdown(f"**🏢 {company}**")
+                        current_dept = current_company_departments.get(company)
+                        
+                        if not masters['target_companies'].empty and not masters['departments'].empty:
+                            # 該当企業のIDを取得
+                            company_row = masters['target_companies'][masters['target_companies']['company_name'] == company]
+                            
+                            if not company_row.empty:
+                                company_id = company_row.iloc[0]['target_company_id']
+                                # その企業の部署一覧を取得
+                                dept_list = masters['departments'][masters['departments']['company_id'] == company_id]['department_name'].tolist()
+                                
+                                if dept_list:
+                                    # 部署選択肢を作成
+                                    dept_options = ["（部署なし）"] + dept_list
+                                    
+                                    # 現在の部署のデフォルト選択
+                                    default_index = 0
+                                    if current_dept and current_dept in dept_list:
+                                        default_index = dept_list.index(current_dept) + 1
+                                    
+                                    # ユニークなキーで部署選択
+                                    selected_dept = st.selectbox(
+                                        f"部署選択",
+                                        dept_options,
+                                        index=default_index,
+                                        key=f"edit_dept_select_{i}_{company.replace(' ', '_')}",
+                                        help=f"{company} の部署を選択してください"
+                                    )
+                                    company_departments[company] = None if selected_dept == "（部署なし）" else selected_dept
+                                else:
+                                    # 部署データがない場合は手動入力
+                                    company_departments[company] = st.text_input(
+                                        "部署名（手動入力）",
+                                        value=current_dept or '',
+                                        placeholder="部署名を入力",
+                                        key=f"edit_dept_manual_{i}_{company.replace(' ', '_')}",
+                                        help=f"{company} にはマスター部署が登録されていません"
+                                    )
+                            else:
+                                # 企業がマスターに存在しない場合
+                                st.warning(f"⚠️ {company} はマスター企業に登録されていません")
+                                company_departments[company] = st.text_input(
+                                    "部署名（手動入力）",
+                                    value=current_dept or '',
+                                    placeholder="部署名を入力",
+                                    key=f"edit_dept_manual_new_{i}_{company.replace(' ', '_')}",
+                                    help=f"手動で部署名を入力してください"
+                                )
+                        else:
+                            # マスターデータがない場合は手動入力のみ
+                            company_departments[company] = st.text_input(
+                                "部署名（手動入力）",
+                                value=current_dept or '',
+                                placeholder="部署名を入力",
+                                key=f"edit_dept_manual_fallback_{i}_{company.replace(' ', '_')}",
+                                help="マスターデータが利用できないため手動入力してください"
+                            )
+                        
+                        # 区切り線を追加（最後の企業以外）
+                        if i < len(selected_companies) - 1:
+                            st.markdown("---")
+            else:
+                company_departments = {}
+                st.info("👆 まず上でターゲット企業を選択してください")
             col1, col2 = st.columns(2)
             
             with col1:
@@ -2249,91 +2335,8 @@ def show_projects_edit():
                                     index=["OPEN", "CLOSED", "PENDING", "IN_PROGRESS"].index(selected_project.get('status', 'OPEN')) if selected_project.get('status') in ["OPEN", "CLOSED", "PENDING", "IN_PROGRESS"] else 0)
                 
             with col2:
-                # 企業ごとの部署選択（編集用）
-                current_company_departments = {}
-                if 'project_target_companies' in selected_project and selected_project['project_target_companies']:
-                    ptc_list = selected_project['project_target_companies']
-                    if isinstance(ptc_list, list):
-                        for ptc in ptc_list:
-                            if ptc.get('target_companies'):
-                                company_name = ptc['target_companies']['company_name']
-                                dept_name = ptc.get('departments', {}).get('department_name') if ptc.get('departments') else None
-                                current_company_departments[company_name] = dept_name
-                
-        # 部署選択UI（フォーム外で動的更新）
-        company_departments = {}
-        if selected_companies:
-            st.markdown("**🎯 企業ごとのターゲット部署選択**")
-            st.markdown("*各企業に対してターゲット部署を個別に設定できます*")
-            
-            # 企業ごとに部署選択UIを動的生成
-            for i, company in enumerate(selected_companies):
-                with st.container():
-                    st.markdown(f"**🏢 {company}**")
-                    current_dept = current_company_departments.get(company)
-                    
-                    if not masters['target_companies'].empty and not masters['departments'].empty:
-                        # 該当企業のIDを取得
-                        company_row = masters['target_companies'][masters['target_companies']['company_name'] == company]
-                        
-                        if not company_row.empty:
-                            company_id = company_row.iloc[0]['target_company_id']
-                            # その企業の部署一覧を取得
-                            dept_list = masters['departments'][masters['departments']['company_id'] == company_id]['department_name'].tolist()
-                            
-                            if dept_list:
-                                # 部署選択肢を作成
-                                dept_options = ["（部署なし）"] + dept_list
-                                
-                                # 現在の部署のデフォルト選択
-                                default_index = 0
-                                if current_dept and current_dept in dept_list:
-                                    default_index = dept_list.index(current_dept) + 1
-                                
-                                # ユニークなキーで部署選択
-                                selected_dept = st.selectbox(
-                                    f"部署選択",
-                                    dept_options,
-                                    index=default_index,
-                                    key=f"edit_dept_select_{i}_{company.replace(' ', '_')}",
-                                    help=f"{company} の部署を選択してください"
-                                )
-                                company_departments[company] = None if selected_dept == "（部署なし）" else selected_dept
-                            else:
-                                # 部署データがない場合は手動入力
-                                company_departments[company] = st.text_input(
-                                    "部署名（手動入力）",
-                                    value=current_dept or '',
-                                    placeholder="部署名を入力",
-                                    key=f"edit_dept_manual_{i}_{company.replace(' ', '_')}",
-                                    help=f"{company} にはマスター部署が登録されていません"
-                                )
-                        else:
-                            # 企業がマスターに存在しない場合
-                            st.warning(f"⚠️ {company} はマスター企業に登録されていません")
-                            company_departments[company] = st.text_input(
-                                "部署名（手動入力）",
-                                value=current_dept or '',
-                                placeholder="部署名を入力",
-                                key=f"edit_dept_manual_new_{i}_{company.replace(' ', '_')}",
-                                help=f"手動で部署名を入力してください"
-                            )
-                    else:
-                        # マスターデータがない場合は手動入力のみ
-                        company_departments[company] = st.text_input(
-                            "部署名（手動入力）",
-                            value=current_dept or '',
-                            placeholder="部署名を入力",
-                            key=f"edit_dept_manual_fallback_{i}_{company.replace(' ', '_')}",
-                            help="マスターデータが利用できないため手動入力してください"
-                        )
-                    
-                    # 区切り線を追加（最後の企業以外）
-                    if i < len(selected_companies) - 1:
-                        st.markdown("---")
-        else:
-            company_departments = {}
-            st.info("👆 まず上でターゲット企業を選択してください")
+                # 予約スペース（col2は今後必要に応じて使用）
+                pass
                 
         headcount_value = selected_project.get('required_headcount')
         if pd.isna(headcount_value) or headcount_value is None:
