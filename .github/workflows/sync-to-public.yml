@@ -1,0 +1,78 @@
+name: Sync to Public Repository
+
+on:
+  push:
+    branches: [ main, demo ]
+  workflow_dispatch: # 手動実行も可能
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout main repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup Git
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+
+    - name: Clone public repository
+      run: |
+        git clone https://${{ secrets.PUBLIC_REPO_TOKEN }}@github.com/akira-fujita/hr-talent-dashboard-public.git public-repo
+      env:
+        PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+
+    - name: Sync files to public repository
+      run: |
+        # 公開用リポジトリのファイルを更新
+        cd public-repo
+        
+        # メインリポジトリからファイルをコピー（機密ファイルを除外）
+        rsync -av --exclude='.git' \
+                  --exclude='.streamlit/secrets.toml' \
+                  --exclude='venv' \
+                  --exclude='__pycache__' \
+                  --exclude='.DS_Store' \
+                  --exclude='notion_import' \
+                  ../ ./
+        
+        # 変更があるかチェック
+        if [[ -n $(git status --porcelain) ]]; then
+          git add .
+          git commit -m "Auto-sync from main repository
+          
+          Source commit: ${{ github.sha }}
+          Branch: ${{ github.ref_name }}
+          
+          🤖 Generated with [Claude Code](https://claude.ai/code)
+          
+          Co-Authored-By: Claude <noreply@anthropic.com>"
+          git push origin main
+          echo "✅ Successfully synced to public repository"
+        else
+          echo "ℹ️ No changes to sync"
+        fi
+
+    - name: Create GitHub Release (on version tags)
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }}
+        body: |
+          🚀 New release of HR Talent Dashboard
+          
+          **Changes**: 
+          - Auto-synced from private repository
+          - See main repository for detailed changelog
+          
+          **Demo**: https://akira-fujita-test-hr-dashboard-app-2rwmjj.streamlit.app
+        draft: false
+        prerelease: false

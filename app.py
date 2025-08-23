@@ -41,16 +41,12 @@ st.markdown("""
 def init_supabase():
     """Supabaseクライアントを初期化"""
     try:
-        # secretsが設定されているかチェック
-        if "SUPABASE_URL" not in st.secrets or "SUPABASE_ANON_KEY" not in st.secrets:
-            st.info("🎯 デモモード: サンプルデータで動作します")
-            return None
-            
         url = st.secrets["SUPABASE_URL"]
         key = st.secrets["SUPABASE_ANON_KEY"]
         return create_client(url, key)
     except Exception as e:
-        st.info("🎯 デモモード: サンプルデータで動作します")
+        st.error(f"Supabase接続エラー: {str(e)}")
+        # サンプルデータにフォールバック
         return None
 
 
@@ -475,11 +471,6 @@ def fetch_project_assignments_for_contact(contact_id):
 def main():
     st.title("👥 HR Talent Dashboard")
     st.text("version 0.2")
-    
-    # デモモード表示
-    if supabase is None:
-        st.success("🎯 **デモモード**: このアプリはサンプルデータで動作しています。全ての機能をお試しいただけます！")
-    
     # サイドバーナビゲーション
     st.sidebar.title("📊 メニュー")
     st.sidebar.markdown("---")
