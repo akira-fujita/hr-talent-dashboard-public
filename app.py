@@ -2274,10 +2274,16 @@ def show_projects_edit():
                         st.success(f"マスター企業: {', '.join(available_companies[:5])}{'...' if len(available_companies) > 5 else ''}")
                         
                         # デバッグ用: multiselect widget の実際の選択値確認
-                        st.warning(f"multiselect実際の値: {repr(selected_companies)}")
+                        st.warning(f"multiselect実際の値: {selected_companies}")
                         
                         # デバッグ用: multiselect のデフォルト値確認
-                        st.error(f"current_companies: {repr(current_companies)}")
+                        st.error(f"current_companies: {current_companies}")
+                        
+                        # デバッグ用: マスターデータのcompany_name一覧
+                        st.info(f"マスターデータ全企業: {masters['target_companies']['company_name'].tolist()}")
+                        
+                        # デバッグ用: company_optionsの内容確認
+                        st.success(f"company_options: {company_options}")
                     else:
                         st.warning("マスター企業データが空です")
                     
