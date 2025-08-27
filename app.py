@@ -469,7 +469,7 @@ def fetch_project_assignments_for_contact(contact_id):
 
 def main():
     st.title("👥 HR Talent Dashboard")
-    st.text("version 0.2")
+    st.text("version 0.3")
     # サイドバーナビゲーション
     st.sidebar.title("📊 メニュー")
     st.sidebar.markdown("---")
