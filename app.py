@@ -304,7 +304,6 @@ def generate_sample_project_assignments():
             'COMPLETED', 'ASSIGNED', 'CANDIDATE', 'INTERVIEW', 'ASSIGNED',
             'CANDIDATE', 'REJECTED', 'ASSIGNED', 'CANDIDATE', 'COMPLETED'
         ],
-        'assigned_at': pd.date_range('2024-01-15', periods=15, freq='W').strftime('%Y-%m-%d %H:%M:%S'),
         'created_at': pd.date_range('2024-01-15', periods=15, freq='W').strftime('%Y-%m-%d %H:%M:%S'),
         'updated_at': pd.date_range('2024-01-15', periods=15, freq='W').strftime('%Y-%m-%d %H:%M:%S'),
         
@@ -379,7 +378,7 @@ def fetch_master_data():
         return {}
     
     masters = {}
-    tables = ['target_companies', 'client_companies', 'departments', 'projects', 'search_assignees', 'priority_levels', 'approach_methods']
+    tables = ['target_companies', 'client_companies', 'projects', 'search_assignees', 'priority_levels', 'approach_methods']
     
     for table in tables:
         try:
@@ -443,7 +442,7 @@ def fetch_project_assignments_for_contact(contact_id):
         response = supabase.table('project_assignments')\
             .select('*, projects(project_name, project_target_companies(target_companies(company_name)))')\
             .eq('contact_id', contact_id)\
-            .order('assigned_at', desc=True)\
+            .order('created_at', desc=True)\
             .execute()
         
         if response.data:
@@ -458,7 +457,7 @@ def fetch_project_assignments_for_contact(contact_id):
                     'project_name': project_info.get('project_name', 'N/A') if project_info else 'N/A',
                     'company_name': company_info.get('company_name', 'N/A') if company_info else 'N/A',
                     'assignment_status': assignment['assignment_status'],
-                    'assigned_at': assignment['assigned_at']
+                    'created_at': assignment.get('created_at')
                 })
             return pd.DataFrame(assignments_data)
         else:
@@ -490,6 +489,15 @@ def main():
     
     selected_page = st.sidebar.radio("ページを選択", list(pages.keys()))
     page_key = pages[selected_page]
+    
+    # ページが案件管理以外に変更された場合、案件編集関連のセッション状態をクリア
+    if 'current_page_key' not in st.session_state:
+        st.session_state.current_page_key = page_key
+    elif st.session_state.current_page_key != page_key:
+        if st.session_state.current_page_key == "projects" and page_key != "projects":
+            # 案件管理から他のページに移動した場合、編集状態をクリア
+            clear_project_editing_state()
+        st.session_state.current_page_key = page_key
     
     # サンプルデータ使用オプション
     use_sample_data = st.sidebar.checkbox("🎯 サンプルデータを使用", value=True, help="実際のデータが少ない場合に有効にしてください")
@@ -534,7 +542,7 @@ def fetch_recruitment_kpis():
     try:
         # 案件データ取得（新しい多対多関係対応）
         projects_response = supabase.table('projects').select(
-            '*, client_companies(company_name), project_assignments(assignment_id, assignment_status, contact_id), project_target_companies(target_companies(company_name))'
+            '*, client_companies(company_name), project_assignments(assignment_id, assignment_status, contact_id), project_target_companies(id, target_companies(target_company_id, company_name), department_name, priority_levels(priority_id, priority_name, priority_value))'
         ).execute()
         
         # コンタクトデータ取得
@@ -1231,6 +1239,10 @@ def show_contacts_list():
                         st.text(f"フリガナ: {selected_contact['furigana']}")
                     if 'estimated_age' in selected_contact.index and pd.notna(selected_contact['estimated_age']):
                         st.text(f"推定年齢: {selected_contact['estimated_age']}")
+                    if 'birth_date' in selected_contact.index and pd.notna(selected_contact['birth_date']):
+                        st.text(f"生年月日: {selected_contact['birth_date']}")
+                    if 'actual_age' in selected_contact.index and pd.notna(selected_contact['actual_age']):
+                        st.text(f"実年齢: {selected_contact['actual_age']}歳")
                     if 'contact_id' in selected_contact.index:
                         st.text(f"ID: {selected_contact['contact_id']}")
                 
@@ -1287,7 +1299,6 @@ def show_contacts_list():
                     # すべてのコメント関連フィールドを表示
                     comment_fields = [
                         ('primary_screening_comment', '一次精査コメント'),
-                        ('scrutiny_memo', '精査メモ'),
                         ('work_comment', '作業コメント'),
                         ('approach_comment', 'アプローチコメント'),
                         ('interview_comment', '面談コメント'),
@@ -1372,7 +1383,6 @@ def show_contacts_list():
                         'estimated_age': '推定年齢',
                         'profile': 'プロフィール',
                         'url': 'プロフィールURL',
-                        'scrutiny_memo': '精査メモ',
                         'screening_status': '精査状況',
                         'primary_screening_comment': '一次精査コメント',
                         'priority_id': '優先度ID',
@@ -1495,6 +1505,21 @@ def show_add_contact():
             with col_furigana2:
                 furigana_first_name = st.text_input("フリガナ（名）", placeholder="タロウ")
             estimated_age = st.text_input("推定年齢", placeholder="30代")
+            
+            # 生年月日と実年齢
+            from datetime import datetime
+            min_date = datetime(1900, 1, 1).date()  # 1900年から選択可能
+            max_date = date.today()  # 今日まで選択可能
+            birth_date = st.date_input("生年月日", value=None, format="YYYY-MM-DD", min_value=min_date, max_value=max_date, key="create_birth_date")
+            
+            # 生年月日から実年齢を自動計算
+            if birth_date:
+                today = date.today()
+                actual_age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+                st.text_input("実年齢", value=f"{actual_age}歳", disabled=True)
+            else:
+                actual_age = None
+                st.text_input("実年齢", value="生年月日を選択してください", disabled=True)
         
         with col2:
             # 部署名入力（文字列）
@@ -1520,7 +1545,6 @@ def show_add_contact():
             url = st.text_input("URL")
         
         with col4:
-            memo = st.text_area("メモ", height=100)
             work_comment = st.text_area("作業コメント", height=100)
         
         st.markdown("### 作業情報")
@@ -1558,7 +1582,7 @@ def show_add_contact():
                             selected_method = st.text_input(f"AP手法{i}", placeholder="手動入力", key=f"new_method_{i}")
                         ap_methods.append(selected_method)
         
-        st.markdown("### 住所情報")
+        st.markdown("### 🏢 勤務地情報")
         
         col7, col8, col9 = st.columns(3)
         
@@ -1566,10 +1590,10 @@ def show_add_contact():
             postal_code = st.text_input("郵便番号", placeholder="123-4567")
         
         with col8:
-            address = st.text_input("住所", placeholder="東京都渋谷区...")
+            address = st.text_input("勤務地住所", placeholder="東京都渋谷区...")
         
         with col9:
-            building_name = st.text_input("ビル名", placeholder="○○ビル 5F")
+            building_name = st.text_input("勤務地ビル名", placeholder="○○ビル 5F")
         
         submitted = st.form_submit_button("🎯 登録", use_container_width=True, type="primary")
         
@@ -1617,9 +1641,10 @@ def show_add_contact():
                     'department_name': selected_department if selected_department else None,
                     'position_name': selected_position if selected_position else None,
                     'estimated_age': estimated_age if estimated_age else None,
+                    'birth_date': birth_date.isoformat() if birth_date else None,
+                    'actual_age': actual_age if actual_age else None,
                     'profile': profile if profile else None,
                     'url': url if url else None,
-                    'scrutiny_memo': memo if memo else None,
                     'work_comment': work_comment if work_comment else None,
                     'search_assignee_id': assignee_id,
                     'search_date': search_date.isoformat() if search_date else None,
@@ -1631,18 +1656,18 @@ def show_add_contact():
                 if response:
                     contact_id = response.data[0]['contact_id'] if response.data else None
                     
-                    # 住所情報の挿入
+                    # 勤務地情報の挿入
                     if contact_id and (postal_code or address or building_name):
-                        address_data = {
+                        work_location_data = {
                             'contact_id': contact_id,
                             'postal_code': postal_code if postal_code else None,
-                            'address': address if address else None,
+                            'work_address': address if address else None,
                             'building_name': building_name if building_name else None
                         }
                         try:
-                            supabase.table('addresses').insert(address_data).execute()
+                            supabase.table('work_locations').insert(work_location_data).execute()
                         except Exception as e:
-                            st.warning(f"住所情報の登録でエラー: {str(e)}")
+                            st.warning(f"勤務地情報の登録でエラー: {str(e)}")
                     
                     # AP履歴の挿入（contact_approachesテーブル）
                     if contact_id:
@@ -1686,9 +1711,8 @@ def show_projects():
         show_projects_edit()
         # 編集後にタブをリセット
         if st.button("一覧に戻る", key="back_from_project_edit"):
+            clear_project_editing_state()
             st.session_state.selected_project_tab = 0
-            if 'selected_project_id' in st.session_state:
-                del st.session_state.selected_project_id
             st.rerun()
         return
     elif st.session_state.selected_project_tab == 3:
@@ -1706,6 +1730,9 @@ def show_projects():
     # 通常のタブ表示
     tab_list = st.tabs(["📋 一覧・検索", "📝 新規登録", "✏️ 詳細編集", "🗑️ 削除", "👥 人材アサイン"])
     
+    # タブ切り替え時の状態管理を改善
+    current_tab = 0  # デフォルトは一覧タブ
+    
     # 一覧・検索タブ
     with tab_list[0]:
         show_projects_list()
@@ -1716,6 +1743,11 @@ def show_projects():
     
     # 詳細編集タブ
     with tab_list[2]:
+        # タブが切り替わった際の状態確認
+        if current_tab != 2:
+            # 編集タブに初めて入った時のメッセージ
+            if 'current_editing_project_id' not in st.session_state and 'selected_project_id_from_list' not in st.session_state:
+                st.info("💡 編集する案件を選択してください。一覧タブで案件を選択してから編集タブをご利用いただくと便利です。")
         show_projects_edit()
     
     # 削除タブ
@@ -1739,9 +1771,8 @@ def show_projects_list():
             project_target_companies(
                 id,
                 target_company_id,
-                department_id,
                 target_companies(company_name),
-                departments(department_name)
+                department_name
             )
         """).execute()
         
@@ -1845,25 +1876,33 @@ def show_projects_list():
         # 新しいスキーマ対応: project_target_companies経由で部署名取得
         if 'project_target_companies' in filtered_projects.columns:
 
-            def extract_departments(ptc_list):
+            def extract_companies_and_departments(ptc_list):
                 if not ptc_list:
                     return ''
                 if isinstance(ptc_list, list):
-                    depts = []
+                    company_dept_list = []
                     for ptc in ptc_list:
-                        if ptc.get('departments') and ptc['departments'].get('department_name'):
-                            company_name = ptc.get('target_companies', {}).get('company_name', '不明')
-                            dept_name = ptc['departments']['department_name']
-                            depts.append(f"{company_name}({dept_name})")
-                        elif ptc.get('target_companies'):
+                        if ptc.get('target_companies'):
                             company_name = ptc['target_companies'].get('company_name', '不明')
-                            depts.append(f"{company_name}")
-                    return ', '.join(depts)
+                            dept_name = ptc.get('department_name', '')
+                            priority_info = ptc.get('priority_levels', {})
+                            priority_name = priority_info.get('priority_name', '') if priority_info else ''
+                            priority_value = priority_info.get('priority_value', '') if priority_info else ''
+                            
+                            # 表示文字列を構築
+                            display_parts = [company_name]
+                            if dept_name:
+                                display_parts.append(f"({dept_name})")
+                            if priority_name:
+                                display_parts.append(f"[{priority_name}:{priority_value}]")
+                            
+                            company_dept_list.append(''.join(display_parts))
+                    return ', '.join(company_dept_list)
                 return ''
             
-            filtered_projects['department_name'] = filtered_projects['project_target_companies'].apply(extract_departments)
-            display_columns.append('department_name')
-            column_config['department_name'] = 'ターゲット企業・部署'
+            filtered_projects['target_companies_list'] = filtered_projects['project_target_companies'].apply(extract_companies_and_departments)
+            display_columns.append('target_companies_list')
+            column_config['target_companies_list'] = 'ターゲット企業・部署'
         
         available_columns = [col for col in display_columns if col in filtered_projects.columns]
         
@@ -1952,9 +1991,13 @@ def show_projects_list():
                             for i, ptc in enumerate(ptc_list, 1):
                                 with st.expander(f"対象企業 {i}"):
                                     if ptc.get('target_companies'):
-                                        st.text(f"企業名: {ptc['target_companies'].get('company_name', '不明')}")
-                                    if ptc.get('departments'):
-                                        st.text(f"部署名: {ptc['departments'].get('department_name', '部署指定なし')}")
+                                        company_name = ptc['target_companies'].get('company_name', '不明')
+                                        dept_name = ptc.get('department_name', '')
+                                        if dept_name:
+                                            st.text(f"企業名: {company_name}")
+                                            st.text(f"部署名: {dept_name}")
+                                        else:
+                                            st.text(f"企業名: {company_name}")
                     else:
                         st.info("対象企業・部署情報はありません")
                 
@@ -2011,55 +2054,34 @@ def show_projects_list():
                                 st.text(f"{field}: {value}")
                 
                 with tab5:
-                    # インライン編集フォーム
-                    st.markdown("#### ✏️ 案件情報編集")
+                    # 詳細編集タブへのリダイレクト
+                    st.markdown("#### ✏️ 案件詳細編集")
+                    st.info("💡 詳細な編集機能を使用するには「詳細編集」タブをご利用ください。")
                     
-                    with st.form(f"edit_project_{selected_project['project_id']}"):
-                        col_edit1, col_edit2 = st.columns(2)
-                        
-                        with col_edit1:
-                            edit_project_name = st.text_input("案件名", value=selected_project.get('project_name', ''))
-                            edit_status = st.selectbox("ステータス",
-                                                     options=['', 'アクティブ', '一時停止', '終了', 'キャンセル'],
-                                                     index=0 if not selected_project.get('status') else 
-                                                           ['', 'アクティブ', '一時停止', '終了', 'キャンセル'].index(selected_project['status']) if selected_project['status'] in ['', 'アクティブ', '一時停止', '終了', 'キャンセル'] else 0)
-                            edit_required_headcount = st.number_input("必要人数", min_value=0, value=int(selected_project.get('required_headcount', 0)) if pd.notna(selected_project.get('required_headcount')) else 0)
-                        
-                        with col_edit2:
-                            edit_contract_start = st.date_input("契約開始日", value=pd.to_datetime(selected_project.get('contract_start_date')).date() if pd.notna(selected_project.get('contract_start_date')) else None)
-                            edit_contract_end = st.date_input("契約終了日", value=pd.to_datetime(selected_project.get('contract_end_date')).date() if pd.notna(selected_project.get('contract_end_date')) else None)
-                            edit_co_manager = st.text_input("CO担当", value=selected_project.get('co_manager', ''))
-                        
-                        edit_job_description = st.text_area("職務内容", value=selected_project.get('job_description', ''), height=100)
-                        edit_requirements = st.text_area("必須要件", value=selected_project.get('requirements', ''), height=100)
-                        
-                        if st.form_submit_button("💾 更新", use_container_width=True):
-                            try:
-                                # 更新データを準備
-                                update_data = {
-                                    'project_name': edit_project_name,
-                                    'status': edit_status,
-                                    'required_headcount': edit_required_headcount,
-                                    'contract_start_date': edit_contract_start.isoformat() if edit_contract_start else None,
-                                    'contract_end_date': edit_contract_end.isoformat() if edit_contract_end else None,
-                                    'co_manager': edit_co_manager,
-                                    'job_description': edit_job_description,
-                                    'requirements': edit_requirements,
-                                    'updated_at': 'now()'
-                                }
-                                
-                                # データベース更新
-                                result = supabase.table("projects").update(update_data).eq("project_id", selected_project['project_id']).execute()
-                                
-                                if result.data:
-                                    st.success("✅ 案件情報を更新しました")
-                                    st.cache_data.clear()
-                                    st.rerun()
-                                else:
-                                    st.error("❌ 更新に失敗しました")
-                                    
-                            except Exception as e:
-                                st.error(f"❌ エラーが発生しました: {str(e)}")
+                    col_redirect1, col_redirect2 = st.columns([1, 1])
+                    
+                    with col_redirect1:
+                        if st.button("📝 詳細編集タブで編集", use_container_width=True, type="primary"):
+                            # 選択された案件IDを保存
+                            st.session_state.selected_project_id_from_list = selected_project['project_id']
+                            # 詳細編集タブに切り替え
+                            st.session_state.selected_project_tab = 2
+                            st.success("✅ 詳細編集タブに移動しています...")
+                            st.rerun()
+                    
+                    with col_redirect2:
+                        st.markdown("**選択中の案件:**")
+                        st.write(f"🎯 {selected_project.get('project_name', 'N/A')}")
+                        st.write(f"📊 ステータス: {selected_project.get('status', 'N/A')}")
+                    
+                    st.markdown("---")
+                    st.markdown("**詳細編集タブでは以下の機能が利用できます：**")
+                    st.markdown("""
+                    - 🎯 **ターゲット企業・部門・優先度の管理**
+                    - 📝 **案件の詳細情報編集** 
+                    - 🔄 **リアルタイムでの保存・更新**
+                    - 🐛 **デバッグ情報の表示**
+                    """)
                 
                 # アクションボタン
                 st.markdown("---")
@@ -2160,17 +2182,180 @@ def show_projects_list():
 def show_projects_create():
     """新規案件作成画面"""
     st.markdown("### 📝 新規案件作成")
-    st.info("新規案件作成機能は開発中です。")
+    
+    if supabase is None:
+        st.warning("データベースに接続されていません。")
+        return
+    
+    # マスターデータ取得
+    try:
+        companies_response = supabase.table('target_companies').select('*').execute()
+        priority_response = supabase.table('priority_levels').select('*').execute()
+        
+        companies = companies_response.data if companies_response.data else []
+        priorities = priority_response.data if priority_response.data else []
+        
+    except Exception as e:
+        st.error(f"マスターデータの取得に失敗しました: {e}")
+        return
+    
+    # 基本情報入力
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        project_name = st.text_input("案件名", placeholder="例: システム開発エンジニア募集")
+        project_description = st.text_area("案件概要", height=100, placeholder="案件の詳細説明")
+        
+    with col2:
+        employment_type = st.selectbox("雇用形態", ["正社員", "契約社員", "派遣", "業務委託", "アルバイト・パート"])
+        salary_range = st.text_input("給与範囲", placeholder="例: 400-600万円")
+    
+    # ターゲット企業・部門設定
+    st.markdown("#### 🎯 ターゲット企業・部門設定")
+    
+    # 動的に追加できるターゲット設定
+    if 'target_companies_list' not in st.session_state:
+        st.session_state.target_companies_list = []
+    
+    # 新しいターゲット追加
+    with st.expander("➕ ターゲット企業・部門を追加", expanded=len(st.session_state.target_companies_list) == 0):
+        target_col1, target_col2, target_col3, target_col4 = st.columns([3, 3, 2, 1])
+        
+        with target_col1:
+            company_options = [""] + [comp['company_name'] for comp in companies]
+            selected_company_name = st.selectbox("企業", company_options, key="new_company")
+            
+        with target_col2:
+            department_name = st.text_input("部門名", key="new_department", placeholder="例: 開発部")
+            
+        with target_col3:
+            priority_options = [""] + [f"{p['priority_name']} ({p['priority_value']})" for p in priorities]
+            selected_priority = st.selectbox("優先度", priority_options, key="new_priority")
+            
+        with target_col4:
+            if st.button("追加", key="add_target"):
+                if selected_company_name and department_name:
+                    # 重複チェック（同じ企業・部門の組み合わせ）
+                    duplicate_exists = any(
+                        target['company_name'] == selected_company_name and 
+                        target['department_name'] == department_name
+                        for target in st.session_state.target_companies_list
+                    )
+                    
+                    if duplicate_exists:
+                        st.warning(f"「{selected_company_name} - {department_name}」は既に追加されています。")
+                    else:
+                        # 企業IDを取得
+                        selected_company = next((c for c in companies if c['company_name'] == selected_company_name), None)
+                        
+                        # 優先度の処理（空の場合も許可）
+                        priority_id = None
+                        priority_name = ''
+                        priority_value = ''
+                        
+                        if selected_priority and selected_priority.strip():
+                            priority_info = selected_priority.split(" (")
+                            priority_name = priority_info[0]
+                            selected_priority_obj = next((p for p in priorities if p['priority_name'] == priority_name), None)
+                            if selected_priority_obj:
+                                priority_id = selected_priority_obj['priority_id']
+                                priority_value = selected_priority_obj['priority_value']
+                        
+                        target_info = {
+                            'company_id': selected_company['target_company_id'],
+                            'company_name': selected_company_name,
+                            'department_name': department_name,
+                            'priority_id': priority_id,
+                            'priority_name': priority_name,
+                            'priority_value': priority_value
+                        }
+                        st.session_state.target_companies_list.append(target_info)
+                else:
+                    st.warning("企業名と部門名を入力してください。")
+    
+    # 追加されたターゲット一覧表示
+    if st.session_state.target_companies_list:
+        st.markdown("##### 設定済みターゲット企業・部門")
+        
+        # 優先度順でソート（空白は最後、priority_valueの降順）
+        def sort_key(target):
+            priority_value = target.get('priority_value', '')
+            if priority_value == '' or priority_value is None:
+                return (1, 0)  # 空白は最後（1）、かつ優先度0
+            else:
+                try:
+                    return (0, float(priority_value))  # 優先度ありは最初（0）、値の降順
+                except (ValueError, TypeError):
+                    return (1, 0)  # 変換できない場合は最後
+        
+        sorted_targets = sorted(st.session_state.target_companies_list, key=sort_key, reverse=True)
+        
+        for i, target in enumerate(sorted_targets):
+            # 元のインデックスを取得（削除処理のため）
+            original_index = st.session_state.target_companies_list.index(target)
+            col1, col2, col3, col4 = st.columns([3, 3, 2, 1])
+            with col1:
+                st.write(f"🏢 {target['company_name']}")
+            with col2:
+                st.write(f"🏛️ {target['department_name']}")
+            with col3:
+                priority_display = f"⭐ {target['priority_name']} ({target['priority_value']})" if target['priority_name'] else "⭐ 未設定"
+                st.write(priority_display)
+            with col4:
+                if st.button("削除", key=f"delete_target_{i}"):
+                    st.session_state.target_companies_list.pop(original_index)
+        
+        # 作成ボタン
+        st.markdown("---")
+        if st.button("案件を作成", type="primary", key="create_project"):
+            if project_name and st.session_state.target_companies_list:
+                try:
+                    # プロジェクト作成
+                    project_data = {
+                        'project_name': project_name,
+                        'project_description': project_description,
+                        'employment_type': employment_type,
+                        'salary_range': salary_range
+                    }
+                    
+                    project_response = supabase.table('projects').insert(project_data).execute()
+                    if project_response.data:
+                        project_id = project_response.data[0]['project_id']
+                        
+                        # ターゲット企業・部門を個別に挿入
+                        for target in st.session_state.target_companies_list:
+                            target_company_data = {
+                                'project_id': int(project_id) if project_id is not None else None,
+                                'target_company_id': int(target['company_id']) if target.get('company_id') is not None else None,
+                                'department_name': target.get('department_name') if target.get('department_name') else None,
+                                'priority_id': int(target['priority_id']) if target.get('priority_id') is not None else None
+                            }
+                            
+                            # 必須フィールドがNoneの場合はスキップ
+                            if target_company_data['project_id'] is None or target_company_data['target_company_id'] is None:
+                                continue
+                                
+                            supabase.table('project_target_companies').insert(target_company_data).execute()
+                        
+                        st.success(f"案件「{project_name}」を作成しました！")
+                        # セッション状態をクリア
+                        st.session_state.target_companies_list = []
+                        st.rerun()
+                    else:
+                        st.error("案件の作成に失敗しました。")
+                        
+                except Exception as e:
+                    st.error(f"案件作成中にエラーが発生しました: {e}")
+            else:
+                st.warning("案件名とターゲット企業・部門を設定してください。")
+    else:
+        st.info("ターゲット企業・部門を追加してください。")
 
 
-def show_projects_edit():
-    """案件編集画面"""
-    st.markdown("### ✏️ 案件編集")
-    st.info("案件編集機能は開発中です。")
-
+# Removed duplicate functions - using the active implementation below
 
 def show_projects_delete():
-    """案件削除画面"""
+    """案件削除機能"""
     st.markdown("### 🗑️ 案件削除")
     st.info("案件削除機能は開発中です。")
 
@@ -2180,8 +2365,43 @@ def show_project_assignments():
     st.markdown("### 👥 人材アサイン管理")
     st.info("人材アサイン管理機能は開発中です。")
 
-# Project management UI alignment completed successfully
 
+def manage_project_selection_state():
+    """案件選択状態を統一管理する関数"""
+    # セッション状態キーの定義
+    keys = {
+        'from_list': 'selected_project_id_from_list',
+        'current_editing': 'current_editing_project_id', 
+        'selected_tab': 'selected_project_tab'
+    }
+    
+    # 優先順位に従って選択すべき案件IDを決定
+    selected_id = None
+    
+    # 1. 一覧からの選択が最優先
+    if keys['from_list'] in st.session_state:
+        selected_id = st.session_state[keys['from_list']]
+        # 使用したのでクリア
+        del st.session_state[keys['from_list']]
+        # 編集継続用にセット
+        st.session_state[keys['current_editing']] = selected_id
+    # 2. 現在編集中のIDを使用
+    elif keys['current_editing'] in st.session_state:
+        selected_id = st.session_state[keys['current_editing']]
+    
+    return selected_id, keys
+
+def clear_project_editing_state():
+    """案件編集関連のセッション状態をクリア"""
+    keys_to_clear = [
+        'current_editing_project_id',
+        'selected_project_id_from_list',
+        'selected_project_tab'
+    ]
+    
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
 
 def show_projects_edit():
     """案件編集機能"""
@@ -2193,137 +2413,260 @@ def show_projects_edit():
         return
     
     try:
-        response = supabase.table('projects').select(
-            '*, project_target_companies(target_companies(company_name), departments(department_name))'
-        ).execute()
+        # まずプロジェクトデータを取得
+        response = supabase.table('projects').select('*').execute()
         if response.data:
-            df = pd.DataFrame(response.data)
+            projects_data = response.data
+            
+            # 各プロジェクトに対してターゲット企業情報を取得
+            for project in projects_data:
+                project_id = project['project_id']
+                
+                # ターゲット企業情報を個別に取得
+                ptc_response = supabase.table('project_target_companies').select(
+                    'id, target_company_id, department_name, priority_id, target_companies(target_company_id, company_name), priority_levels(priority_id, priority_name, priority_value)'
+                ).eq('project_id', project_id).execute()
+                
+                project['project_target_companies'] = ptc_response.data if ptc_response.data else []
+            
+            df = pd.DataFrame(projects_data)
         else:
             df = pd.DataFrame()
-    except:
+    except Exception as e:
+        st.error(f"データ取得エラー: {str(e)}")
         df = pd.DataFrame()
     
     if df.empty:
         st.info("データベースに登録された案件がありません。まず「新規案件」タブから案件を追加してください。")
         return
     
+    # 統一されたセッション状態管理を使用
+    preselected_id, session_keys = manage_project_selection_state()
+    
     # 編集対象選択
     project_options = df.apply(lambda row: f"{row.get('project_name', 'N/A')} ({row.get('status', 'N/A')})", axis=1).tolist()
+    
+    # デフォルトのインデックスを決定
+    default_index = 0
+    if preselected_id:
+        for i, (_, project) in enumerate(df.iterrows()):
+            if project.get('project_id') == preselected_id:
+                default_index = i
+                break
+    
     selected_index = st.selectbox("編集する案件を選択してください", range(len(project_options)),
-                                  format_func=lambda x: project_options[x])
+                                  format_func=lambda x: project_options[x], 
+                                  index=default_index)
     
     if selected_index is not None:
         selected_project = df.iloc[selected_index]
         project_id = selected_project.get('project_id')
         
+        # 現在編集中の案件IDを保存
+        st.session_state[session_keys['current_editing']] = project_id
+        
         masters = fetch_master_data()
         
         st.markdown(f"#### 編集中: {selected_project.get('project_name', 'N/A')}")
         
-        # 企業選択部分（フォーム外で動的更新を可能に）
-        st.markdown("**🏢 ターゲット企業選択**")
-        current_companies = []
-        if 'project_target_companies' in selected_project and selected_project['project_target_companies']:
-            # 複数の企業情報を取得
-            ptc_list = selected_project['project_target_companies']
-            if isinstance(ptc_list, list):
-                current_companies = [tc['target_companies']['company_name'] for tc in ptc_list if tc.get('target_companies')]
-            elif isinstance(ptc_list, dict) and ptc_list.get('target_companies'):
-                current_companies = [ptc_list['target_companies']['company_name']]
+        # ターゲット企業・部門・優先度管理
+        st.markdown("#### 🎯 ターゲット企業・部門・優先度管理")
         
-        # 企業ごとの部署選択（編集用）の事前準備
-        current_company_departments = {}
+        # 既存のターゲット設定を取得
+        existing_targets = []
         if 'project_target_companies' in selected_project and selected_project['project_target_companies']:
             ptc_list = selected_project['project_target_companies']
             if isinstance(ptc_list, list):
                 for ptc in ptc_list:
                     if ptc.get('target_companies'):
-                        company_name = ptc['target_companies']['company_name']
-                        dept_name = ptc.get('departments', {}).get('department_name') if ptc.get('departments') else None
-                        current_company_departments[company_name] = dept_name
-                        
-        # 企業選択（フォーム外で動的更新を可能にする）
-        if not masters['target_companies'].empty:
-            company_options = masters['target_companies']['company_name'].tolist()
-            selected_companies = st.multiselect("ターゲット企業", company_options, default=current_companies, help="複数の企業を選択できます", key=f"edit_companies_{project_id}")
-        else:
-            company_input = st.text_input("企業名", value=','.join(current_companies), placeholder="カンマ区切りで複数入力可能")
-            selected_companies = [c.strip() for c in company_input.split(',') if c.strip()] if company_input else []
-
-        # 企業ごとの部署選択（フォーム外で動的更新）
-        company_departments = {}
-        if selected_companies:
-            st.markdown("**🎯 企業ごとのターゲット部署選択**")
-            st.markdown("*各企業に対してターゲット部署を個別に設定できます*")
+                        target_info = {
+                            'id': ptc.get('id'),
+                            'company_id': ptc['target_companies'].get('target_company_id'),
+                            'company_name': ptc['target_companies'].get('company_name', ''),
+                            'department_name': ptc.get('department_name', ''),
+                            'priority_id': ptc.get('priority_levels', {}).get('priority_id') if ptc.get('priority_levels') else None,
+                            'priority_name': ptc.get('priority_levels', {}).get('priority_name', '') if ptc.get('priority_levels') else '',
+                            'priority_value': ptc.get('priority_levels', {}).get('priority_value', '') if ptc.get('priority_levels') else ''
+                        }
+                        existing_targets.append(target_info)
+        
+        # セッション状態で編集中のターゲット一覧を管理
+        edit_key = f"edit_target_companies_list_{project_id}"
+        db_hash_key = f"db_hash_{project_id}"
+        
+        # データベース状態のハッシュを生成（より確実な比較のため）
+        import json
+        current_db_hash = hash(json.dumps(existing_targets, sort_keys=True, default=str))
+        
+        # 初期化：データベースの状態が変わった場合のみセッション状態をリセット
+        if db_hash_key not in st.session_state or st.session_state[db_hash_key] != current_db_hash:
+            st.session_state[edit_key] = existing_targets.copy()
+            st.session_state[db_hash_key] = current_db_hash
+        elif edit_key not in st.session_state:
+            st.session_state[edit_key] = existing_targets.copy()
+        
+        # 新しいターゲット追加
+        with st.expander("➕ ターゲット企業・部門を追加/編集"):
+            target_col1, target_col2, target_col3, target_col4 = st.columns([3, 3, 2, 1])
             
-            # 企業ごとに部署選択UIを動的生成
-            for i, company in enumerate(selected_companies):
-                with st.container():
-                    st.markdown(f"**🏢 {company}**")
-                    current_dept = current_company_departments.get(company)
-                    
-                    if not masters['target_companies'].empty and not masters['departments'].empty:
-                        # 該当企業のIDを取得
-                        company_row = masters['target_companies'][masters['target_companies']['company_name'] == company]
-                        
-                        if not company_row.empty:
-                            company_id = company_row.iloc[0]['target_company_id']
-                            # その企業の部署一覧を取得
-                            dept_list = masters['departments'][masters['departments']['company_id'] == company_id]['department_name'].tolist()
-                            
-                            if dept_list:
-                                # 部署選択肢を作成
-                                dept_options = ["（部署なし）"] + dept_list
-                                
-                                # 現在の部署のデフォルト選択
-                                default_index = 0
-                                if current_dept and current_dept in dept_list:
-                                    default_index = dept_list.index(current_dept) + 1
-                                
-                                # ユニークなキーで部署選択
-                                selected_dept = st.selectbox(
-                                    f"部署選択",
-                                    dept_options,
-                                    index=default_index,
-                                    key=f"edit_dept_select_{i}_{company.replace(' ', '_')}",
-                                    help=f"{company} の部署を選択してください"
-                                )
-                                company_departments[company] = None if selected_dept == "（部署なし）" else selected_dept
-                            else:
-                                # 部署データがない場合は手動入力
-                                company_departments[company] = st.text_input(
-                                    "部署名（手動入力）",
-                                    value=current_dept or '',
-                                    placeholder="部署名を入力",
-                                    key=f"edit_dept_manual_{i}_{company.replace(' ', '_')}",
-                                    help=f"{company} にはマスター部署が登録されていません"
-                                )
-                        else:
-                            # 企業がマスターに存在しない場合
-                            st.warning(f"⚠️ {company} はマスター企業に登録されていません")
-                            company_departments[company] = st.text_input(
-                                "部署名（手動入力）",
-                                value=current_dept or '',
-                                placeholder="部署名を入力",
-                                key=f"edit_dept_manual_new_{i}_{company.replace(' ', '_')}",
-                                help=f"手動で部署名を入力してください"
-                            )
-                    else:
-                        # マスターデータがない場合は手動入力のみ
-                        company_departments[company] = st.text_input(
-                            "部署名（手動入力）",
-                            value=current_dept or '',
-                            placeholder="部署名を入力",
-                            key=f"edit_dept_manual_fallback_{i}_{company.replace(' ', '_')}",
-                            help="マスターデータが利用できないため手動入力してください"
+            # マスターデータ取得
+            companies = masters['target_companies'].to_dict('records') if not masters['target_companies'].empty else []
+            priority_response = supabase.table('priority_levels').select('*').execute() if supabase else None
+            priorities = priority_response.data if priority_response and priority_response.data else []
+            
+            with target_col1:
+                company_options = [""] + [comp['company_name'] for comp in companies]
+                selected_company_name = st.selectbox("企業", company_options, key=f"edit_new_company_{project_id}")
+                
+            with target_col2:
+                department_name = st.text_input("部門名", key=f"edit_new_department_{project_id}", placeholder="例: 開発部")
+                
+            with target_col3:
+                priority_options = [""] + [f"{p['priority_name']} ({p['priority_value']})" for p in priorities]
+                selected_priority = st.selectbox("優先度", priority_options, key=f"edit_new_priority_{project_id}")
+                
+            with target_col4:
+                if st.button("追加", key=f"edit_add_target_{project_id}"):
+                    if selected_company_name and department_name:
+                        # 重複チェック（同じ企業・部門の組み合わせ）
+                        duplicate_exists = any(
+                            target['company_name'] == selected_company_name and 
+                            target['department_name'] == department_name
+                            for target in st.session_state[edit_key]
                         )
-                    
-                    # 区切り線を追加（最後の企業以外）
-                    if i < len(selected_companies) - 1:
-                        st.markdown("---")
+                        
+                        if duplicate_exists:
+                            st.warning(f"「{selected_company_name} - {department_name}」は既に追加されています。")
+                        else:
+                            # 企業IDを取得
+                            selected_company = next((c for c in companies if c['company_name'] == selected_company_name), None)
+                            
+                            # 優先度の処理（空の場合も許可）
+                            priority_id = None
+                            priority_name = ''
+                            priority_value = ''
+                            
+                            if selected_priority and selected_priority.strip():
+                                priority_info = selected_priority.split(" (")
+                                priority_name = priority_info[0]
+                                selected_priority_obj = next((p for p in priorities if p['priority_name'] == priority_name), None)
+                                if selected_priority_obj:
+                                    priority_id = selected_priority_obj['priority_id']
+                                    priority_value = selected_priority_obj['priority_value']
+                            
+                            target_info = {
+                                'id': None,  # 新規追加なのでNone
+                                'company_id': selected_company['target_company_id'],
+                                'company_name': selected_company_name,
+                                'department_name': department_name,
+                                'priority_id': priority_id,
+                                'priority_name': priority_name,
+                                'priority_value': priority_value
+                            }
+                            st.session_state[edit_key].append(target_info)
+                            
+                            # 追加と同時にデータベースに保存
+                            try:
+                                target_company_data = {
+                                    'project_id': int(project_id),
+                                    'target_company_id': int(target_info['company_id']),
+                                    'department_name': target_info['department_name'],
+                                    'priority_id': int(target_info['priority_id']) if target_info['priority_id'] is not None else None
+                                }
+                                
+                                insert_response = supabase.table('project_target_companies').insert(target_company_data).execute()
+                                if insert_response.data:
+                                    # 挿入されたレコードのIDを更新
+                                    inserted_id = insert_response.data[0]['id']
+                                    st.session_state[edit_key][-1]['id'] = inserted_id
+                                    
+                                    # DBハッシュを更新
+                                    db_hash_key = f"db_hash_{project_id}"
+                                    import json
+                                    new_db_hash = hash(json.dumps(st.session_state[edit_key], sort_keys=True, default=str))
+                                    st.session_state[db_hash_key] = new_db_hash
+                                    
+                                    st.success(f"✅ 「{selected_company_name} - {department_name}」を追加しました！")
+                                else:
+                                    st.error("❌ データベースへの保存に失敗しました")
+                            except Exception as e:
+                                st.error(f"❌ 保存エラー: {str(e)}")
+                                # エラーの場合はセッション状態からも削除
+                                st.session_state[edit_key].pop()
+                    else:
+                        st.warning("企業名と部門名を入力してください。")
+        
+        # デバッグ情報（開発用）
+        if st.checkbox("デバッグ情報を表示", key=f"debug_info_{project_id}"):
+            st.markdown("**デバッグ情報:**")
+            st.write(f"プロジェクトID: {project_id}")
+            st.write(f"データベース登録数: {len(existing_targets)}")
+            st.write(f"セッション状態の数: {len(st.session_state[edit_key])}")
+            st.write(f"現在のDBハッシュ: {current_db_hash}")
+            st.write(f"保存されたDBハッシュ: {st.session_state.get(db_hash_key, 'なし')}")
+            st.write(f"現在編集中のID: {st.session_state.get(session_keys['current_editing'], 'なし')}")
+            st.write(f"一覧から選択されたID: {st.session_state.get(session_keys['from_list'], 'なし')}")
+            with st.expander("詳細データ"):
+                st.write("データベースから取得:", existing_targets)
+                st.write("セッション状態:", st.session_state[edit_key])
+                st.write("全セッション状態キー:", [k for k in st.session_state.keys() if str(project_id) in k])
+        
+        # 設定済みターゲット一覧表示
+        if st.session_state[edit_key]:
+            st.markdown("##### 設定済みターゲット企業・部門")
+            
+            # 優先度順でソート（空白は最後、priority_valueの降順）
+            def sort_key(target):
+                priority_value = target.get('priority_value', '')
+                if priority_value == '' or priority_value is None:
+                    return (1, 0)  # 空白は最後（1）、かつ優先度0
+                else:
+                    try:
+                        return (0, float(priority_value))  # 優先度ありは最初（0）、値の降順
+                    except (ValueError, TypeError):
+                        return (1, 0)  # 変換できない場合は最後
+            
+            sorted_targets = sorted(st.session_state[edit_key], key=sort_key, reverse=True)
+            
+            for i, target in enumerate(sorted_targets):
+                # 元のインデックスを取得（削除処理のため）
+                original_index = st.session_state[edit_key].index(target)
+                col1, col2, col3, col4 = st.columns([3, 3, 2, 1])
+                with col1:
+                    st.write(f"🏢 {target['company_name']}")
+                with col2:
+                    st.write(f"🏛️ {target['department_name']}")
+                with col3:
+                    priority_display = f"⭐ {target['priority_name']} ({target['priority_value']})" if target['priority_name'] else "⭐ 未設定"
+                    st.write(priority_display)
+                with col4:
+                    if st.button("削除", key=f"edit_delete_target_{project_id}_{i}"):
+                        target_to_delete = st.session_state[edit_key][original_index]
+                        
+                        # データベースからも削除（IDがある場合のみ）
+                        if target_to_delete.get('id'):
+                            try:
+                                supabase.table('project_target_companies').delete().eq('id', target_to_delete['id']).execute()
+                                st.success(f"✅ 「{target_to_delete['company_name']} - {target_to_delete['department_name']}」を削除しました！")
+                            except Exception as e:
+                                st.error(f"❌ 削除エラー: {str(e)}")
+                                return  # エラー時は削除を中止
+                        
+                        # セッション状態から削除
+                        st.session_state[edit_key].pop(original_index)
+                        
+                        # DBハッシュを更新
+                        db_hash_key = f"db_hash_{project_id}"
+                        import json
+                        new_db_hash = hash(json.dumps(st.session_state[edit_key], sort_keys=True, default=str))
+                        st.session_state[db_hash_key] = new_db_hash
+                        
+                        # 編集継続のためセッション状態は維持
+                        st.session_state[session_keys['current_editing']] = project_id
+                        
+                        st.rerun()
         else:
-            company_departments = {}
-            st.info("👆 まず上でターゲット企業を選択してください")
+            st.info("ターゲット企業・部門を追加してください。")
 
         with st.form("edit_project_form"):
             col1, col2 = st.columns(2)
@@ -2394,38 +2737,26 @@ def show_projects_edit():
             if submitted:
                 try:
 
-                    # 企業IDと部署IDを取得
-                    def get_id_from_name(df, name_col, name_val, id_col):
-                        if not name_val or df.empty:
-                            return None
-                        result = df[df[name_col] == name_val]
-                        return int(result.iloc[0][id_col]) if not result.empty else None
+                    # ターゲット企業・部門・優先度の妥当性をチェック
+                    if edit_key not in st.session_state or not st.session_state[edit_key]:
+                        st.error("ターゲット企業・部門を最低1つ設定してください。")
+                        return
                     
-                    # 複数企業のIDを取得
-                    target_company_ids = []
-                    for company_name in selected_companies:
-                        company_id = get_id_from_name(masters['target_companies'], 'company_name', company_name, 'target_company_id')
-                        if company_id:
-                            target_company_ids.append(company_id)
-                    
-                    # 部署選択は企業ごとに行うため削除
-                    # department_id = get_id_from_name(masters['departments'], 'department_name', selected_department, 'department_id')
-                    
-                    # projectsテーブルの更新（target_company_id, target_department_id除外）
+                    # projectsテーブルの更新（数値型をint()で変換、None値チェック）
                     update_data = {
                         'project_name': project_name,
                         'status': status,
                         'contract_start_date': contract_start_date.isoformat() if contract_start_date else None,
                         'contract_end_date': contract_end_date.isoformat() if contract_end_date else None,
-                        'required_headcount': required_headcount,
+                        'required_headcount': int(required_headcount) if required_headcount is not None else 1,
                         'co_manager': co_manager if co_manager else None,
                         're_manager': re_manager if re_manager else None,
                         'job_description': job_description if job_description else None,
                         'requirements': requirements if requirements else None,
                         'employment_type': employment_type if employment_type else None,
                         'work_location': work_location if work_location else None,
-                        'min_age': min_age,
-                        'max_age': max_age,
+                        'min_age': int(min_age) if min_age is not None else 18,
+                        'max_age': int(max_age) if max_age is not None else 65,
                         'education_requirement': education_requirement if education_requirement else None
                     }
                     
@@ -2435,26 +2766,37 @@ def show_projects_edit():
                     # 1. 案件本体を更新
                     response = supabase.table('projects').update(update_data).eq('project_id', project_id).execute()
                     
-                    # 2. 既存の企業関連付けを削除
+                    # 2. 既存のproject_target_companies関連付けを削除
                     supabase.table('project_target_companies').delete().eq('project_id', project_id).execute()
                     
-                    # 3. 新しい企業・部署関連付けを挿入
-                    for company_name in selected_companies:
-                        company_id = get_id_from_name(masters['target_companies'], 'company_name', company_name, 'target_company_id')
-                        department_name = company_departments.get(company_name)
-                        department_id = get_id_from_name(masters['departments'], 'department_name', department_name, 'department_id') if department_name else None
+                    # 3. 新しいターゲット企業・部門・優先度を挿入
+                    target_count = len(st.session_state[edit_key])
+                    for target in st.session_state[edit_key]:
+                        # None値チェックを追加
+                        target_company_data = {
+                            'project_id': int(project_id) if project_id is not None else None,
+                            'target_company_id': int(target['company_id']) if target.get('company_id') is not None else None,
+                            'department_name': target.get('department_name') if target.get('department_name') else None,
+                            'priority_id': int(target['priority_id']) if target.get('priority_id') is not None else None
+                        }
                         
-                        if company_id:
-                            relation_data = {
-                                'project_id': project_id,
-                                'target_company_id': company_id,
-                                'department_id': department_id
-                            }
-                            supabase.table('project_target_companies').insert(relation_data).execute()
+                        # 必須フィールドがNoneの場合はスキップ
+                        if target_company_data['project_id'] is None or target_company_data['target_company_id'] is None:
+                            continue
+                            
+                        supabase.table('project_target_companies').insert(target_company_data).execute()
                     
-                    st.success(f"✅ 案件が正常に更新されました！（ターゲット企業: {len(selected_companies)}社）")
+                    # データベース更新成功時、次回の比較用にDBのハッシュを更新
+                    db_hash_key = f"db_hash_{project_id}"
+                    import json
+                    new_db_hash = hash(json.dumps(st.session_state[edit_key], sort_keys=True, default=str))
+                    st.session_state[db_hash_key] = new_db_hash
+                    
+                    # 編集完了時に編集関連のセッション状態をクリア
+                    clear_project_editing_state()
+                    
+                    st.success(f"✅ 案件が正常に更新されました！（ターゲット設定: {target_count}件）")
                     st.cache_data.clear()
-                    st.rerun()
                     
                 except Exception as e:
                     st.error(f"❌ 更新エラー: {str(e)}")
@@ -2471,7 +2813,7 @@ def show_projects_delete():
     
     try:
         response = supabase.table('projects').select(
-            '*, project_target_companies(target_companies(company_name), departments(department_name))'
+            '*, project_target_companies(id, target_companies(target_company_id, company_name), department_name, priority_levels(priority_id, priority_name, priority_value))'
         ).execute()
         if response.data:
             df = pd.DataFrame(response.data)
@@ -2612,9 +2954,10 @@ def show_masters():
     with tabs[1]:
         st.markdown("### 🏢 部署マスタ")
         
-        if not masters['departments'].empty:
-            # 企業名を展開して表示
-            display_data = masters['departments'].copy()
+        # 部署マスタは廃止されました
+        st.info("📝 部署マスタ機能は廃止されました。\n\n部署情報は各人材のレコードで個別に管理されるようになりました。")
+        if False:  # 以下のコードは無効化
+            display_data = {}
             if not masters['target_companies'].empty:
                 company_dict = masters['target_companies'].set_index('target_company_id')['company_name'].to_dict()
                 display_data['company_name'] = display_data['company_id'].map(company_dict)
@@ -2668,7 +3011,8 @@ def show_masters():
                             'is_target_department': is_target
                         }
                         
-                        response = insert_master_data('departments', department_data)
+                        # 部署マスタは廃止：各コンタクトに直接部署名を保存
+                        response = None
                         if response:
                             st.success(f"部署 '{department_name}' を追加しました")
                             st.cache_data.clear()
@@ -2864,23 +3208,22 @@ def show_specifications():
         
         st.markdown("""
         ```
-        ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-        │   companies     │    │   departments   │    │   positions     │
-        │                 │    │                 │    │                 │
-        │ PK target_company_id   │◄──┐│ PK department_id│    │ PK position_id  │
-        │    company_name │   ││ FK target_company_id   │    │    position_name│
-        │    created_at   │   ││    department_  │    │    created_at   │
-        │    updated_at   │   ││      name       │    │    updated_at   │
-        └─────────────────┘   ││    created_at   │    └─────────────────┘
-                              ││    updated_at   │              ▲
-                              │└─────────────────┘              │
-                              │                                 │
-                              │ ┌─────────────────┐            │
-                              │ │ priority_levels │            │
-                              │ │                 │            │
-                              │ │ PK priority_id  │            │
-                              │ │    priority_name│            │
-                              │ │    priority_value│            │
+        ┌─────────────────┐    ┌─────────────────┐
+        │   companies     │    │   positions     │
+        │                 │    │                 │
+        │ PK target_company_id   │    │ PK position_id  │
+        │    company_name │    │    position_name│
+        │    created_at   │    │    created_at   │
+        │    updated_at   │    │    updated_at   │
+        └─────────────────┘    └─────────────────┘
+                                         ▲
+                                         │
+                              ┌─────────────────┐
+                              │ priority_levels │
+                              │                 │
+                              │ PK priority_id  │
+                              │    priority_name│
+                              │    priority_value│
                               │ │    description  │            │
                               │ │    created_at   │            │
                               │ └─────────────────┘            │
@@ -2916,7 +3259,6 @@ def show_specifications():
         │    url
         │    memo
         │    screening_status
-        │    primary_screening_memo
         │    name_search_key
         │    work_comment
         │    search_date
@@ -2930,7 +3272,6 @@ def show_specifications():
         
         st.markdown("### 🔗 リレーション")
         st.markdown("""
-        - **companies (1) ↔ (N) departments**: 企業は複数の部署を持つ
         - **companies (1) ↔ (N) contacts**: 企業は複数のコンタクトを持つ
         - **priority_levels (1) ↔ (N) contacts**: 優先度は複数のコンタクトで使用される
         - **search_assignees (1) ↔ (N) contacts**: 担当者は複数のコンタクトを担当
@@ -2950,14 +3291,13 @@ def show_specifications():
             ["target_company_id", "BIGINT", "FOREIGN KEY", "NULL", "企業ID（companiesテーブル参照）"],
             ["full_name", "VARCHAR(255)", "", "NOT NULL", "氏名"],
             ["furigana", "VARCHAR(255)", "", "NULL", "フリガナ"],
-            ["department_id", "BIGINT", "FOREIGN KEY", "NULL", "部署ID（departmentsテーブル参照）"],
+            ["department_name", "VARCHAR(255)", "", "NULL", "部署名（テキスト）"],
             ["position_id", "BIGINT", "FOREIGN KEY", "NULL", "役職ID（positionsテーブル参照）"],
             ["estimated_age", "VARCHAR(20)", "", "NULL", "推定年齢"],
             ["profile", "TEXT", "", "NULL", "プロフィール"],
             ["url", "TEXT", "", "NULL", "URL"],
             ["memo", "TEXT", "", "NULL", "メモ"],
             ["screening_status", "VARCHAR(50)", "", "NULL", "精査状況"],
-            ["primary_screening_memo", "TEXT", "", "NULL", "精査メモ"],
             ["priority_id", "BIGINT", "FOREIGN KEY", "NULL", "優先度ID（priority_levelsテーブル参照）"],
             ["name_search_key", "VARCHAR(255)", "", "NULL", "名前検索キー"],
             ["work_comment", "TEXT", "", "NULL", "作業コメント"],
@@ -2979,13 +3319,6 @@ def show_specifications():
             "companies（企業）": [
                 ["target_company_id", "BIGSERIAL", "PRIMARY KEY", "NOT NULL", "企業ID（自動採番）"],
                 ["company_name", "VARCHAR(255)", "UNIQUE", "NOT NULL", "企業名"],
-                ["created_at", "TIMESTAMP", "DEFAULT", "NOT NULL", "作成日時"],
-                ["updated_at", "TIMESTAMP", "DEFAULT", "NOT NULL", "更新日時"]
-            ],
-            "departments（部署）": [
-                ["department_id", "BIGSERIAL", "PRIMARY KEY", "NOT NULL", "部署ID（自動採番）"],
-                ["target_company_id", "BIGINT", "FOREIGN KEY", "NULL", "企業ID"],
-                ["department_name", "VARCHAR(255)", "", "NOT NULL", "部署名"],
                 ["created_at", "TIMESTAMP", "DEFAULT", "NOT NULL", "作成日時"],
                 ["updated_at", "TIMESTAMP", "DEFAULT", "NOT NULL", "更新日時"]
             ],
@@ -3068,7 +3401,7 @@ def show_specifications():
         st.markdown("### 📝 新規登録")
         st.markdown("""
         ```
-        1. マスターデータ取得（companies, departments, positions等）
+        1. マスターデータ取得（companies, positions等）
         2. フォーム入力値検証
         3. 各マスターテーブルからID取得
         4. contacts テーブル INSERT
@@ -3118,8 +3451,8 @@ def show_specifications():
         
         new_features = pd.DataFrame([
             ["🎯 案件管理", "projects", "求人案件の詳細管理機能", "案件一覧・新規作成・人材アサイン"],
-            ["🏢 部署管理", "departments", "企業ごとの部署マスタ管理", "ターゲット部署設定・正規化"],
             ["👥 アサイン管理", "project_assignments", "案件と人材のマッチング", "アサイン状況・履歴追跡"],
+            ["🎯 ターゲット企業管理", "project_target_companies", "案件別企業・部門・優先度管理", "企業部門組み合わせに優先度設定"],
             ["🏭 業種分類", "industry_type (ENUM)", "日本標準産業分類対応", "16種類の業種マスタ"],
             ["📊 統合分析", "Dashboard拡張", "案件・人材統合ダッシュボード", "KPI・可視化強化"]
         ], columns=["機能", "テーブル/実装", "説明", "詳細"])
@@ -3165,7 +3498,6 @@ def show_specifications():
         st.success("✅ v1.0 → v2.0 マイグレーション完了")
         
         migration_status = pd.DataFrame([
-            ["✅ 完了", "departments テーブル作成", "企業ごとの部署マスタ"],
             ["✅ 完了", "projects テーブル作成", "求人案件管理"],
             ["✅ 完了", "project_assignments テーブル作成", "案件・人材アサイン"],
             ["✅ 完了", "industry_type ENUM作成", "業種標準化"],
@@ -3206,17 +3538,11 @@ def show_contacts_create():
                 company_options = [""] + masters['target_companies']['company_name'].tolist()
                 selected_company = st.selectbox("企業名 *", company_options)
                 
-                # 選択された企業に紐づく部署を取得
-                department_options = [""]
-                if selected_company and not masters['departments'].empty:
-                    company_departments = masters['departments'][
-                        masters['departments']['company_name'] == selected_company
-                    ]['department_name'].tolist()
-                    department_options.extend(company_departments)
-                selected_department = st.selectbox("部署名", department_options)
             else:
                 selected_company = st.text_input("企業名 *", placeholder="手動入力")
-                selected_department = st.text_input("部署名", placeholder="営業部、開発部など")
+            
+            # 部署名（自由入力）
+            selected_department = st.text_input("部署名", placeholder="営業部、開発部など")
             
             # 姓・名を分けて入力
             col_name1, col_name2 = st.columns(2)
@@ -3296,12 +3622,7 @@ def show_contacts_create():
                 if not company_match.empty:
                     target_company_id = int(company_match.iloc[0]['target_company_id'])
             
-            # 部署IDを取得
-            department_id = None
-            if selected_department and not masters['departments'].empty:
-                dept_match = masters['departments'][masters['departments']['department_name'] == selected_department]
-                if not dept_match.empty:
-                    department_id = int(dept_match.iloc[0]['department_id'])
+            # 部署名はテキストとして保存
             
             # 優先度IDを取得
             priority_id = None
@@ -3321,7 +3642,6 @@ def show_contacts_create():
                 # contactsテーブルに挿入
                 contact_data = {
                     'target_company_id': target_company_id,
-                    'department_id': department_id,
                     'full_name': full_name,
                     'last_name': last_name,
                     'first_name': first_name,
@@ -3447,7 +3767,7 @@ def show_contacts_edit():
                 col_date, col_method = st.columns(2)
                 
                 with col_date:
-                    approach_date = st.date_input("アプローチ日", value=datetime.now().date())
+                    approach_date = st.date_input("アプローチ日", value=date.today())
                 
                 with col_method:
                     if not masters['approach_methods'].empty:
@@ -3513,7 +3833,7 @@ def show_contacts_edit():
                         status_icon = status_color.get(assignment['assignment_status'], "⚪")
                         st.text(f"{status_icon} {assignment['assignment_status']}")
                     with col_date:
-                        st.text(f"📅 {assignment['assigned_at'][:10] if assignment['assigned_at'] else 'N/A'}")
+                        st.text(f"📅 {assignment.get('created_at', 'N/A')[:10] if assignment.get('created_at') else 'N/A'}")
             else:
                 st.info("案件アサイン履歴がありません")
         
@@ -3546,6 +3866,28 @@ def show_contacts_edit():
                 furigana_first_name = st.text_input("フリガナ（名）", value=selected_contact.get('furigana_first_name', ''))
                 
                 estimated_age = st.text_input("推定年齢", value=selected_contact.get('estimated_age', ''))
+                
+                # 生年月日
+                from datetime import datetime
+                min_date = datetime(1900, 1, 1).date()  # 1900年から選択可能
+                max_date = date.today()  # 今日まで選択可能
+                current_birth_date = selected_contact.get('birth_date')
+                if current_birth_date:
+                    try:
+                        birth_date = st.date_input("生年月日", value=pd.to_datetime(current_birth_date).date(), format="YYYY-MM-DD", min_value=min_date, max_value=max_date, key=f"edit_birth_date_{selected_contact.get('id', 'default')}")
+                    except:
+                        birth_date = st.date_input("生年月日", value=None, format="YYYY-MM-DD", min_value=min_date, max_value=max_date, key=f"edit_birth_date_{selected_contact.get('id', 'default')}_fallback")
+                else:
+                    birth_date = st.date_input("生年月日", value=None, format="YYYY-MM-DD", min_value=min_date, max_value=max_date, key=f"edit_birth_date_{selected_contact.get('id', 'default')}_new")
+                
+                # 生年月日から実年齢を自動計算
+                if birth_date:
+                    today = date.today()
+                    actual_age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+                    st.text_input("実年齢", value=f"{actual_age}歳", disabled=True)
+                else:
+                    actual_age = None
+                    st.text_input("実年齢", value="生年月日を選択してください", disabled=True)
                 
             with col2:
                 # 部署
@@ -3647,6 +3989,8 @@ def show_contacts_edit():
                         'furigana_last_name': furigana_last_name if furigana_last_name else None,
                         'furigana_first_name': furigana_first_name if furigana_first_name else None,
                         'estimated_age': estimated_age if estimated_age else None,
+                        'birth_date': birth_date.isoformat() if birth_date else None,
+                        'actual_age': actual_age if actual_age else None,
                         'profile': profile if profile else None,
                         'url': url if url else None,
                         'screening_status': screening_status if screening_status else None,
@@ -3759,8 +4103,8 @@ def show_contacts_delete():
                     # 関連するcontact_approachesを削除
                     supabase.table('contact_approaches').delete().eq('contact_id', contact_id).execute()
                     
-                    # 関連するaddressesを削除
-                    supabase.table('addresses').delete().eq('contact_id', contact_id).execute()
+                    # 関連するwork_locationsを削除
+                    supabase.table('work_locations').delete().eq('contact_id', contact_id).execute()
                     
                     # 最後にcontactsテーブルから削除
                     response = supabase.table('contacts').delete().eq('contact_id', contact_id).execute()
@@ -4245,7 +4589,8 @@ def import_company_data(df, company_name_col, industry_col, target_dept_col, dup
                             'created_at': datetime.now().isoformat(),
                             'updated_at': datetime.now().isoformat()
                         }
-                        supabase.table('departments').insert(dept_data).execute()
+                        # 部署マスタは廃止：各コンタクトに直接部署名を保存
+                        pass
         
         # 結果表示
         if success_count > 0 or skip_count > 0 or update_count > 0:
