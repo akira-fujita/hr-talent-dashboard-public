@@ -2413,28 +2413,31 @@ def show_projects_edit():
         return
     
     try:
-        # まずプロジェクトデータを取得
-        response = supabase.table('projects').select('*').execute()
+        # 1回のクエリですべてのデータを取得（パフォーマンス改善）
+        response = supabase.table('projects').select(
+            '*, project_target_companies(id, target_company_id, department_name, priority_id, target_companies(target_company_id, company_name), priority_levels(priority_id, priority_name, priority_value))'
+        ).execute()
+        
         if response.data:
-            projects_data = response.data
-            
-            # 各プロジェクトに対してターゲット企業情報を取得
-            for project in projects_data:
-                project_id = project['project_id']
-                
-                # ターゲット企業情報を個別に取得
-                ptc_response = supabase.table('project_target_companies').select(
-                    'id, target_company_id, department_name, priority_id, target_companies(target_company_id, company_name), priority_levels(priority_id, priority_name, priority_value)'
-                ).eq('project_id', project_id).execute()
-                
-                project['project_target_companies'] = ptc_response.data if ptc_response.data else []
-            
-            df = pd.DataFrame(projects_data)
+            df = pd.DataFrame(response.data)
         else:
             df = pd.DataFrame()
     except Exception as e:
         st.error(f"データ取得エラー: {str(e)}")
-        df = pd.DataFrame()
+        st.error("Streamlit Cloudでの接続制限により、データ取得に失敗しました。少し待ってから再試行してください。")
+        # フォールバック: より少ない情報で基本的なプロジェクトリストを取得
+        try:
+            st.info("基本情報のみで案件リストを表示します...")
+            simple_response = supabase.table('projects').select('project_id, project_name, status').execute()
+            if simple_response.data:
+                df = pd.DataFrame(simple_response.data)
+                # 空のproject_target_companiesを追加
+                df['project_target_companies'] = [[] for _ in range(len(df))]
+            else:
+                df = pd.DataFrame()
+        except Exception as fallback_error:
+            st.error(f"フォールバック取得も失敗: {str(fallback_error)}")
+            df = pd.DataFrame()
     
     if df.empty:
         st.info("データベースに登録された案件がありません。まず「新規案件」タブから案件を追加してください。")
