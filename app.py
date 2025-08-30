@@ -6,6 +6,29 @@ from datetime import datetime, date
 import numpy as np
 from supabase import create_client
 
+# URLパラメータ管理用のヘルパー関数
+def get_url_param(key, default=""):
+    """URLパラメータから値を取得するヘルパー関数"""
+    return st.query_params.get(key, default)
+
+def set_url_param(key, value):
+    """URLパラメータを設定するヘルパー関数"""
+    if value and value != "" and value != "すべて":
+        st.query_params[key] = str(value)
+    else:
+        # 空の値や「すべて」の場合はパラメータを削除
+        if key in st.query_params:
+            del st.query_params[key]
+
+def get_selectbox_index(options, default_value):
+    """selectboxのデフォルトインデックスを取得するヘルパー関数"""
+    try:
+        if default_value and default_value in options:
+            return options.index(default_value)
+    except (ValueError, AttributeError):
+        pass
+    return 0
+
 # ページ設定
 st.set_page_config(
     page_title="HR Talent Dashboard",
@@ -470,6 +493,10 @@ def fetch_project_assignments_for_contact(contact_id):
 def main():
     st.title("👥 HR Talent Dashboard")
     st.text("version 0.3")
+    
+    # URLクエリパラメータから現在のページを取得
+    query_params = st.query_params
+    
     # サイドバーナビゲーション
     st.sidebar.title("📊 メニュー")
     st.sidebar.markdown("---")
@@ -487,8 +514,15 @@ def main():
         # "📋 DB仕様書": "specifications"
     }
     
-    selected_page = st.sidebar.radio("ページを選択", list(pages.keys()))
+    # URLパラメータからページを取得、なければデフォルト
+    default_page_key = query_params.get("page", "contacts")
+    default_page_name = next((name for name, key in pages.items() if key == default_page_key), "👥 コンタクト管理")
+    
+    selected_page = st.sidebar.radio("ページを選択", list(pages.keys()), index=list(pages.keys()).index(default_page_name))
     page_key = pages[selected_page]
+    
+    # URLパラメータを更新
+    st.query_params["page"] = page_key
     
     # ページが案件管理以外に変更された場合、案件編集関連のセッション状態をクリア
     if 'current_page_key' not in st.session_state:
@@ -1077,14 +1111,30 @@ def show_contacts_list():
     if is_sample_data:
         st.info("💡 現在表示されているのはデモ用のサンプルデータです。編集・削除機能を使用するには、「新規登録」タブから実際のデータを登録してください。")
     
+    # URLパラメータから初期値を取得
+    default_search = get_url_param("contact_search", "")
+    default_search_all = get_url_param("contact_search_all", "")
+    default_company = get_url_param("contact_company", "すべて")
+    default_priority = get_url_param("contact_priority", "すべて")
+    default_screening = get_url_param("contact_screening", "すべて")
+    default_ap = get_url_param("contact_ap", "すべて")
+    
     # 検索機能
     col_search1, col_search2 = st.columns(2)
     
     with col_search1:
-        search_text = st.text_input("🔍 氏名・フリガナ検索", placeholder="氏名またはフリガナを入力してください...")
+        search_text = st.text_input("🔍 氏名・フリガナ検索", 
+                                   value=default_search,
+                                   placeholder="氏名またはフリガナを入力してください...")
+        if search_text != default_search:
+            set_url_param("contact_search", search_text)
     
     with col_search2:
-        search_all_text = st.text_input("🔍 全項目検索", placeholder="プロフィール、コメント、経歴など全項目から検索...")
+        search_all_text = st.text_input("🔍 全項目検索", 
+                                       value=default_search_all,
+                                       placeholder="プロフィール、コメント、経歴など全項目から検索...")
+        if search_all_text != default_search_all:
+            set_url_param("contact_search_all", search_all_text)
     
     # フィルター機能
     col1, col2, col3, col4 = st.columns(4)
@@ -1092,24 +1142,32 @@ def show_contacts_list():
     with col1:
         if 'company_name' in df.columns:
             companies = ["すべて"] + sorted(df['company_name'].dropna().unique().tolist())
-            selected_company = st.selectbox("企業", companies)
+            selected_company = st.selectbox("企業", companies, 
+                                          index=get_selectbox_index(companies, default_company))
+            set_url_param("contact_company", selected_company)
         else:
             selected_company = "すべて"
     
     with col2:
         if 'priority_name' in df.columns:
             priorities = ["すべて"] + sorted(df['priority_name'].dropna().unique().tolist())
-            selected_priority = st.selectbox("優先度", priorities)
+            selected_priority = st.selectbox("優先度", priorities,
+                                           index=get_selectbox_index(priorities, default_priority))
+            set_url_param("contact_priority", selected_priority)
         else:
             selected_priority = "すべて"
     
     with col3:
         screening_statuses = ["すべて", "精査済み", "未精査"]
-        selected_screening = st.selectbox("精査状況", screening_statuses)
+        selected_screening = st.selectbox("精査状況", screening_statuses,
+                                        index=get_selectbox_index(screening_statuses, default_screening))
+        set_url_param("contact_screening", selected_screening)
     
     with col4:
         ap_statuses = ["すべて", "AP済み", "未AP"]
-        st.selectbox("AP状況", ap_statuses)
+        selected_ap = st.selectbox("AP状況", ap_statuses,
+                                  index=get_selectbox_index(ap_statuses, default_ap))
+        set_url_param("contact_ap", selected_ap)
     
     # フィルター適用
     filtered_df = df.copy()
@@ -1763,6 +1821,11 @@ def show_projects_list():
     """案件一覧・検索画面"""
     st.markdown("### 📋 案件一覧・検索")
     
+    # URLパラメータから選択状態を取得
+    query_params = st.query_params
+    default_status = query_params.get("project_status", "すべて")
+    default_company = query_params.get("project_company", "すべて")
+    
     # プロジェクト一覧を取得
     try:
         projects_query = supabase.table("projects").select("""
@@ -1796,7 +1859,9 @@ def show_projects_list():
         with col1:
             if 'status' in projects_df.columns:
                 status_options = ["すべて"] + sorted(projects_df['status'].dropna().unique().tolist())
-                selected_status = st.selectbox("ステータス", status_options)
+                # デフォルト値のインデックスを取得
+                default_status_index = status_options.index(default_status) if default_status in status_options else 0
+                selected_status = st.selectbox("ステータス", status_options, index=default_status_index)
             else:
                 selected_status = "すべて"
         
@@ -1819,9 +1884,15 @@ def show_projects_list():
                 
                 unique_companies = list(set([c for c in all_companies if c]))
                 company_options = ["すべて"] + sorted(unique_companies)
-                selected_company = st.selectbox("企業", company_options)
+                # デフォルト値のインデックスを取得
+                default_company_index = company_options.index(default_company) if default_company in company_options else 0
+                selected_company = st.selectbox("企業", company_options, index=default_company_index)
             else:
                 selected_company = "すべて"
+        
+        # URLパラメータを更新
+        st.query_params["project_status"] = selected_status
+        st.query_params["project_company"] = selected_company
         
         # フィルター適用
         filtered_projects = projects_df.copy()
@@ -5035,6 +5106,11 @@ def show_email_management():
     """メール管理機能"""
     st.header("📧 メール管理システム")
     
+    # URLパラメータから選択状態を取得
+    query_params = st.query_params
+    default_project_key = query_params.get("email_project", "")
+    default_company_id = query_params.get("email_company", "")
+    
     if supabase is None:
         st.error("データベース接続エラー")
         return
@@ -5093,9 +5169,16 @@ def show_email_management():
                 }
         
         if project_options:
+            # URLパラメータからデフォルト選択を設定
+            project_list = [""] + list(project_options.keys())
+            default_index = 0
+            if default_project_key in project_list:
+                default_index = project_list.index(default_project_key)
+            
             selected_project_key = st.selectbox(
                 "案件を選択",
-                [""] + list(project_options.keys()),
+                project_list,
+                index=default_index,
                 key="email_project_select"
             )
             
@@ -5104,6 +5187,9 @@ def show_email_management():
                 company_id = project_info['company_id']
                 selected_company = project_info['company_name']
                 st.success(f"選択中: {selected_project_key}")
+                # URLパラメータを更新
+                st.query_params["email_project"] = selected_project_key
+                st.query_params["email_company"] = str(company_id)
         else:
             st.info("案件データがありません")
     
@@ -5171,9 +5257,21 @@ def show_email_management():
                     company_id = company_options[selected_company_name]
                     selected_company = selected_company_name
             else:
+                # URLパラメータからデフォルト企業を設定
+                company_list = [""] + list(company_options.keys())
+                default_company_index = 0
+                
+                # default_company_idから企業名を逆引き
+                for company_name, comp_id in company_options.items():
+                    if str(comp_id) == default_company_id:
+                        if company_name in company_list:
+                            default_company_index = company_list.index(company_name)
+                        break
+                
                 direct_selected_company = st.selectbox(
                     "企業を選択",
-                    [""] + list(company_options.keys()),
+                    company_list,
+                    index=default_company_index,
                     key="email_company_direct_select"
                 )
                 
@@ -5183,6 +5281,10 @@ def show_email_management():
                     company_id = company_options[direct_selected_company]
                     selected_company = direct_selected_company
                     st.success(f"選択中: {direct_selected_company}")
+                    # URLパラメータを更新
+                    st.query_params["email_company"] = str(company_id)
+                    if not selected_project_key:
+                        st.query_params["email_project"] = ""
         else:
             if selected_project_key:
                 st.info("この案件に関連する企業がありません")
@@ -5191,52 +5293,72 @@ def show_email_management():
     
     if company_id and selected_company:
         
-        tab1, tab2, tab3, tab4 = st.tabs(["🔍 検索パターン", "✅ 確認済みメール", "❌ 誤送信履歴", "📝 メモ"])
+        tab1, tab2, tab3 = st.tabs(["🔍 検索パターン", "✅ 確認済みメール", "❌ 誤送信履歴"])
         
         with tab1:
             show_email_patterns_tab(company_id, selected_company)
+            # 検索パターンの下にメモセクションを追加
+            st.divider()
+            show_email_memo_section(company_id, selected_company)
         
         with tab2:
             show_confirmed_emails_tab(company_id, selected_company)
         
         with tab3:
             show_misdelivery_emails_tab(company_id, selected_company)
-        
-        with tab4:
-            show_email_memo_tab(company_id, selected_company)
 
 
 def show_email_patterns_tab(company_id, company_name):
     """メール検索パターンタブ"""
     st.subheader(f"🔍 {company_name} のメール検索パターン")
     
-    # 既存パターンの取得
-    result = supabase.table('target_companies').select('email_search_patterns').eq('target_company_id', company_id).execute()
-    existing_patterns = []
-    if result.data and result.data[0]['email_search_patterns']:
-        existing_patterns = result.data[0]['email_search_patterns']
+    # Session State初期化
+    if f'email_patterns_{company_id}' not in st.session_state:
+        # 既存パターンの取得
+        result = supabase.table('target_companies').select('email_search_patterns').eq('target_company_id', company_id).execute()
+        if result.data and result.data[0]['email_search_patterns']:
+            st.session_state[f'email_patterns_{company_id}'] = result.data[0]['email_search_patterns']
+        else:
+            st.session_state[f'email_patterns_{company_id}'] = [""]  # 最低1つの入力欄
     
-    # パターンの表示・編集
-    patterns = []
-    for i in range(5):  # 最大5個のパターン
-        pattern = st.text_input(
-            f"パターン {i+1}",
-            value=existing_patterns[i] if i < len(existing_patterns) else "",
-            placeholder="例: firstname.lastname@company.com",
-            key=f"pattern_{i}"
-        )
-        if pattern:
-            patterns.append(pattern)
+    # パターン入力欄の動的表示
+    patterns_to_save = []
+    for i in range(len(st.session_state[f'email_patterns_{company_id}'])):
+        col1, col2 = st.columns([6, 1])
+        with col1:
+            pattern = st.text_input(
+                f"パターン {i+1}",
+                value=st.session_state[f'email_patterns_{company_id}'][i],
+                placeholder="例: firstname.lastname@company.com",
+                key=f"pattern_{company_id}_{i}"
+            )
+            if pattern:
+                patterns_to_save.append(pattern)
+        with col2:
+            st.write("")  # 高さ調整
+            if len(st.session_state[f'email_patterns_{company_id}']) > 1:
+                if st.button("🗑️", key=f"delete_pattern_{company_id}_{i}", help="このパターンを削除"):
+                    st.session_state[f'email_patterns_{company_id}'].pop(i)
+                    st.rerun()
     
-    if st.button("パターンを保存", key="save_patterns"):
-        try:
-            supabase.table('target_companies').update({
-                'email_search_patterns': patterns if patterns else None
-            }).eq('target_company_id', company_id).execute()
-            
-            st.success(f"✅ {len(patterns)}個のパターンを保存しました")
-        except Exception as e:
-            st.error(f"❌ 保存に失敗しました: {str(e)}")
+    # パターン追加ボタン
+    col1, col2, col3 = st.columns([2, 2, 3])
+    with col1:
+        if st.button("➕ パターンを追加", key=f"add_pattern_{company_id}"):
+            st.session_state[f'email_patterns_{company_id}'].append("")
+            st.rerun()
+    
+    with col2:
+        if st.button("💾 パターンを保存", key="save_patterns", type="primary"):
+            try:
+                supabase.table('target_companies').update({
+                    'email_search_patterns': patterns_to_save if patterns_to_save else None
+                }).eq('target_company_id', company_id).execute()
+                
+                st.success(f"✅ {len(patterns_to_save)}個のパターンを保存しました")
+                st.session_state[f'email_patterns_{company_id}'] = patterns_to_save if patterns_to_save else [""]
+            except Exception as e:
+                st.error(f"❌ 保存に失敗しました: {str(e)}")
 
 
 def show_confirmed_emails_tab(company_id, company_name):
@@ -5249,20 +5371,83 @@ def show_confirmed_emails_tab(company_id, company_name):
     if result.data and result.data[0]['confirmed_emails']:
         existing_emails = result.data[0]['confirmed_emails']
     
-    # 既存メールの表示
+    # 既存メールの表示と削除機能
     if existing_emails:
-        df = pd.DataFrame(existing_emails)
-        st.dataframe(df, use_container_width=True)
+        st.write("### 登録済みメールアドレス")
+        
+        # メールアドレスの昇順でソート
+        sorted_emails = sorted(existing_emails, key=lambda x: x.get('email', '').lower())
+        
+        # ヘッダー行
+        col1, col2, col3, col4, col5, col6, col7 = st.columns([3, 2, 1.5, 1.5, 1.5, 1.5, 0.5])
+        with col1:
+            st.markdown("**メールアドレス**")
+        with col2:
+            st.markdown("**氏名**")
+        with col3:
+            st.markdown("**部署**")
+        with col4:
+            st.markdown("**役職**")
+        with col5:
+            st.markdown("**確認方法**")
+        with col6:
+            st.markdown("**確認日**")
+        with col7:
+            st.markdown("**削除**")
+        
+        st.divider()
+        
+        # 各メールを個別に表示（削除ボタン付き）
+        for email_data in sorted_emails:
+            # 元のリストでのインデックスを取得（削除用）
+            original_index = existing_emails.index(email_data)
+            col1, col2, col3, col4, col5, col6, col7 = st.columns([3, 2, 1.5, 1.5, 1.5, 1.5, 0.5])
+            
+            with col1:
+                st.write(email_data.get('email', ''))
+            with col2:
+                st.write(email_data.get('name', ''))
+            with col3:
+                st.write(email_data.get('department', ''))
+            with col4:
+                st.write(email_data.get('position', ''))
+            with col5:
+                st.write(email_data.get('confirmation_method', ''))
+            with col6:
+                # 日付のフォーマット
+                confirmed_date = email_data.get('confirmed_date', '')
+                if confirmed_date:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(confirmed_date.replace('Z', '+00:00'))
+                        st.write(dt.strftime('%Y/%m/%d'))
+                    except:
+                        st.write(confirmed_date[:10] if len(confirmed_date) >= 10 else confirmed_date)
+                else:
+                    st.write('')
+            with col7:
+                if st.button("🗑️", key=f"delete_email_{company_id}_{original_index}", help=f"{email_data.get('email', '')}を削除"):
+                    updated_emails = [e for j, e in enumerate(existing_emails) if j != original_index]
+                    try:
+                        supabase.table('target_companies').update({
+                            'confirmed_emails': updated_emails if updated_emails else None
+                        }).eq('target_company_id', company_id).execute()
+                        
+                        st.success(f"✅ {email_data.get('email', '')} を削除しました")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 削除に失敗しました: {str(e)}")
     else:
         st.info("まだ確認済みメールがありません")
     
     # 新規メール追加フォーム
     st.subheader("➕ 新しいメールを追加")
+    st.caption("※ * は必須項目です")
     
     col1, col2 = st.columns(2)
     with col1:
-        email = st.text_input("メールアドレス", key="new_email")
-        name = st.text_input("氏名", key="new_name")
+        email = st.text_input("メールアドレス *", key="new_email")
+        name = st.text_input("氏名 *", key="new_name")
         department = st.text_input("部署", key="new_dept")
     
     with col2:
@@ -5305,23 +5490,78 @@ def show_misdelivery_emails_tab(company_id, company_name):
     if result.data and result.data[0]['misdelivery_emails']:
         existing_misdelivery = result.data[0]['misdelivery_emails']
     
-    # 既存履歴の表示
+    # 既存履歴の表示と削除機能
     if existing_misdelivery:
-        df = pd.DataFrame(existing_misdelivery)
-        st.dataframe(df, use_container_width=True)
+        st.write("### 登録済み誤送信履歴")
+        
+        # メールアドレスの昇順でソート
+        sorted_misdelivery = sorted(existing_misdelivery, key=lambda x: x.get('email', '').lower())
+        
+        # ヘッダー行
+        col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 3, 0.5])
+        with col1:
+            st.markdown("**誤送信先メール**")
+        with col2:
+            st.markdown("**送信日**")
+        with col3:
+            st.markdown("**理由**")
+        with col4:
+            st.markdown("**詳細メモ**")
+        with col5:
+            st.markdown("**削除**")
+        
+        st.divider()
+        
+        # 各履歴を個別に表示（削除ボタン付き）
+        for sorted_idx, misdelivery_data in enumerate(sorted_misdelivery):
+            # 元のリストでのインデックスを取得（削除用）
+            original_index = existing_misdelivery.index(misdelivery_data)
+            col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 3, 0.5])
+            
+            with col1:
+                st.write(misdelivery_data.get('email', ''))
+            with col2:
+                # 日付のフォーマット
+                sent_date = misdelivery_data.get('sent_date', '')
+                if sent_date:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(sent_date.replace('Z', '+00:00'))
+                        st.write(dt.strftime('%Y/%m/%d'))
+                    except:
+                        st.write(sent_date[:10] if len(sent_date) >= 10 else sent_date)
+                else:
+                    st.write('')
+            with col3:
+                st.write(misdelivery_data.get('reason', ''))
+            with col4:
+                st.write(misdelivery_data.get('memo', ''))
+            with col5:
+                if st.button("🗑️", key=f"delete_misdelivery_{company_id}_{sorted_idx}_{original_index}", help=f"{misdelivery_data.get('email', '')}を削除"):
+                    updated_misdelivery = [e for j, e in enumerate(existing_misdelivery) if j != original_index]
+                    try:
+                        supabase.table('target_companies').update({
+                            'misdelivery_emails': updated_misdelivery if updated_misdelivery else None
+                        }).eq('target_company_id', company_id).execute()
+                        
+                        st.success(f"✅ {misdelivery_data.get('email', '')} の記録を削除しました")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 削除に失敗しました: {str(e)}")
     else:
         st.info("誤送信履歴はありません")
     
     # 新規履歴追加フォーム
     st.subheader("➕ 誤送信記録を追加")
+    st.caption("※ * は必須項目です")
     
     col1, col2 = st.columns(2)
     with col1:
-        wrong_email = st.text_input("誤送信先メール", key="wrong_email")
+        wrong_email = st.text_input("誤送信先メール *", key="wrong_email")
         sent_date = st.date_input("送信日", value=date.today(), key="sent_date")
     
     with col2:
-        reason = st.selectbox("理由", ["同姓同名の別人", "退職済み", "部署間違い", "会社間違い"], key="reason")
+        reason = st.selectbox("理由", ["同姓同名の別人", "退職済み", "部署間違い", "会社間違い", "その他"], key="reason")
         memo = st.text_area("詳細メモ", key="memo")
     
     if st.button("記録を追加", key="add_misdelivery"):
@@ -5347,9 +5587,9 @@ def show_misdelivery_emails_tab(company_id, company_name):
             st.error("メールアドレスは必須です")
 
 
-def show_email_memo_tab(company_id, company_name):
-    """メール検索メモタブ"""
-    st.subheader(f"📝 {company_name} のメール検索メモ")
+def show_email_memo_section(company_id, company_name):
+    """メール検索メモセクション"""
+    st.subheader(f"📝 メール検索メモ")
     
     # 既存メモの取得
     result = supabase.table('target_companies').select('email_search_memo').eq('target_company_id', company_id).execute()
@@ -5358,14 +5598,14 @@ def show_email_memo_tab(company_id, company_name):
         existing_memo = result.data[0]['email_search_memo']
     
     memo = st.text_area(
-        "メモ",
+        "パターンに関する備考",
         value=existing_memo,
-        height=200,
-        placeholder="メール検索に関する備考やメモを記録...",
+        height=150,
+        placeholder="メール検索パターンに関する備考やメモを記録...\n例：\n- 旧姓の場合は maiden.name@company.com を使用\n- 外国人スタッフは英語名を使用\n- HR部門は別ドメイン hr@company-hr.com を使用",
         key="email_memo"
     )
     
-    if st.button("メモを保存", key="save_memo"):
+    if st.button("💾 メモを保存", key="save_memo", type="secondary"):
         try:
             supabase.table('target_companies').update({
                 'email_search_memo': memo if memo else None
