@@ -492,7 +492,7 @@ def fetch_project_assignments_for_contact(contact_id):
 
 def main():
     st.title("👥 HR Talent Dashboard")
-    st.text("version 0.3")
+    st.text("version 0.4")
     
     # URLクエリパラメータから現在のページを取得
     query_params = st.query_params
