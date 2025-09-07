@@ -223,23 +223,73 @@ def save_email_search_memo(target_company_id, memo):
 def main():
     st.title("📧 企業メール管理システム")
     
-    # 企業選択
-    target_company_id = st.number_input("企業ID", min_value=1, value=1)
+    # 案件とターゲット企業の選択
+    col1, col2 = st.columns(2)
     
-    # タブで機能を分割
-    tab1, tab2, tab3, tab4 = st.tabs(["🔍 検索パターン", "✅ 確認済みメール", "❌ 誤送信履歴", "📝 メモ"])
+    with col1:
+        # 案件データを取得
+        projects_result = supabase.table('projects').select('project_id, project_name').order('project_name').execute()
+        project_options = {"選択してください": None}
+        if projects_result.data:
+            for p in projects_result.data:
+                project_options[p['project_name']] = p['project_id']
+        
+        selected_project_name = st.selectbox(
+            "📋 案件を選択",
+            options=list(project_options.keys()),
+            key="project_selector"
+        )
+        selected_project_id = project_options[selected_project_name]
     
-    with tab1:
-        display_email_search_patterns_form(target_company_id)
+    with col2:
+        # 選択された案件に紐づくターゲット企業を取得
+        target_company_id = None
+        if selected_project_id:
+            # project_target_companiesから該当案件のターゲット企業を取得
+            target_result = supabase.table('project_target_companies').select(
+                'target_company_id, target_companies(company_name)'
+            ).eq('project_id', selected_project_id).execute()
+            
+            company_options = {"選択してください": None}
+            if target_result.data:
+                for t in target_result.data:
+                    if t.get('target_companies'):
+                        company_name = t['target_companies']['company_name']
+                        company_options[company_name] = t['target_company_id']
+            
+            selected_company_name = st.selectbox(
+                "🏢 ターゲット企業を選択",
+                options=list(company_options.keys()),
+                key="company_selector",
+                disabled=False
+            )
+            target_company_id = company_options[selected_company_name]
+        else:
+            st.selectbox(
+                "🏢 ターゲット企業を選択",
+                options=["先に案件を選択してください"],
+                key="company_selector",
+                disabled=True
+            )
     
-    with tab2:
-        display_confirmed_emails_form(target_company_id)
-    
-    with tab3:
-        display_misdelivery_emails_form(target_company_id)
-    
-    with tab4:
-        display_email_search_memo_form(target_company_id)
+    # ターゲット企業が選択されている場合のみ各機能を表示
+    if target_company_id:
+        # タブで機能を分割
+        tab1, tab2, tab3, tab4 = st.tabs(["🔍 検索パターン", "✅ 確認済みメール", "❌ 誤送信履歴", "📝 メモ"])
+        
+        with tab1:
+            display_email_search_patterns_form(target_company_id)
+        
+        with tab2:
+            display_confirmed_emails_form(target_company_id)
+        
+        with tab3:
+            display_misdelivery_emails_form(target_company_id)
+        
+        with tab4:
+            display_email_search_memo_form(target_company_id)
+    else:
+        st.info("📌 案件とターゲット企業を選択してください")
 
 if __name__ == "__main__":
     main()
