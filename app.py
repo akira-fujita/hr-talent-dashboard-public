@@ -561,7 +561,7 @@ def main():
     use_sample_data = st.sidebar.checkbox("🎯 サンプルデータを使用", value=True, help="実際のデータが少ない場合に有効にしてください")
     
     # データ更新ボタン
-    if st.sidebar.button("🔄 データ更新", width='stretch'):
+    if st.sidebar.button("🔄 データ更新", use_container_width=True):
         st.cache_data.clear()
         st.sidebar.success("データを更新しました")
         st.rerun()
@@ -851,7 +851,7 @@ def show_dashboard(use_sample_data=False):
                     names=status_counts.index,
                     color_discrete_map={'OPEN': '#FF6B6B', 'CLOSED': '#4ECDC4', 'PENDING': '#FFE66D'}
                 )
-                st.plotly_chart(fig_pie, width='stretch')
+                st.plotly_chart(fig_pie, use_container_width=True)
             else:
                 st.info("データがありません")
         
@@ -876,7 +876,7 @@ def show_dashboard(use_sample_data=False):
                     title="案件別候補者数（TOP10）"
                 )
                 fig_bar.update_layout(xaxis_title="案件名", yaxis_title="候補者数")
-                st.plotly_chart(fig_bar, width='stretch')
+                st.plotly_chart(fig_bar, use_container_width=True)
             else:
                 st.info("データがありません")
     else:
@@ -932,7 +932,7 @@ def show_dashboard(use_sample_data=False):
                     color_discrete_map={'未実施': '#FFB6C1', '実施中': '#FFE66D', '実施済み': '#90EE90'}
                 )
                 fig_screening.update_layout(xaxis_title="スクリーニング状況", yaxis_title="候補者数")
-                st.plotly_chart(fig_screening, width='stretch')
+                st.plotly_chart(fig_screening, use_container_width=True)
             else:
                 st.info("データがありません")
         
@@ -949,7 +949,7 @@ def show_dashboard(use_sample_data=False):
                 names='status',
                 color_discrete_map={'アクティブ': '#FF6B6B', '待機中': '#FFE66D', '成約済み': '#4ECDC4'}
             )
-            st.plotly_chart(fig_assignment, width='stretch')
+            st.plotly_chart(fig_assignment, use_container_width=True)
     else:
         st.warning("候補者データが見つかりません")
     
@@ -993,7 +993,7 @@ def show_dashboard(use_sample_data=False):
                     color=method_counts.index
                 )
                 fig_methods.update_layout(xaxis_title="アプローチ手法", yaxis_title="実施回数")
-                st.plotly_chart(fig_methods, width='stretch')
+                st.plotly_chart(fig_methods, use_container_width=True)
             else:
                 st.info("データがありません")
         
@@ -1010,7 +1010,7 @@ def show_dashboard(use_sample_data=False):
                         title="月次アプローチ数推移"
                     )
                     fig_monthly.update_layout(xaxis_title="月", yaxis_title="アプローチ数")
-                    st.plotly_chart(fig_monthly, width='stretch')
+                    st.plotly_chart(fig_monthly, use_container_width=True)
                 else:
                     st.info("データがありません")
             else:
@@ -1039,7 +1039,7 @@ def show_dashboard(use_sample_data=False):
                     color_continuous_scale='viridis'
                 )
                 fig_co.update_layout(xaxis_title="CO担当者", yaxis_title="成約数")
-                st.plotly_chart(fig_co, width='stretch')
+                st.plotly_chart(fig_co, use_container_width=True)
             else:
                 st.info("成約実績データがありません")
         
@@ -1053,7 +1053,7 @@ def show_dashboard(use_sample_data=False):
                     color_continuous_scale='plasma'
                 )
                 fig_re.update_layout(xaxis_title="RE担当者", yaxis_title="成約数")
-                st.plotly_chart(fig_re, width='stretch')
+                st.plotly_chart(fig_re, use_container_width=True)
             else:
                 st.info("成約実績データがありません")
     else:
@@ -1351,7 +1351,7 @@ def show_contacts_list():
             # 選択可能なデータフレームとして表示
             selected_row = st.dataframe(
                 filtered_df[display_columns].fillna(''),
-                width='stretch',
+                use_container_width=True,
                 hide_index=True,
                 column_config=column_config,
                 height=400,
@@ -1570,7 +1570,7 @@ def show_contacts_list():
                     
                     if all_data:
                         df_all = pd.DataFrame(all_data)
-                        st.dataframe(df_all, width='stretch', height=400)
+                        st.dataframe(df_all, use_container_width=True, height=400)
                         
                         # データエクスポートボタン
                         if st.button("📥 全データをCSV形式でダウンロード", key="export_data"):
@@ -1601,18 +1601,18 @@ def show_contacts_list():
                 st.markdown("---")
                 col_action1, col_action2, col_action3 = st.columns(3)
                 with col_action1:
-                    if st.button("✏️ この人材を編集", width='stretch'):
+                    if st.button("✏️ この人材を編集", use_container_width=True):
                         # 選択されたコンタクトIDをsession_stateに保存
                         st.session_state.selected_contact_id = selected_contact['contact_id']
                         st.session_state.selected_tab = 2  # 詳細編集タブ（インデックス2）に移動
                         st.rerun()
                 with col_action2:
-                    if st.button("📋 データをコピー", width='stretch'):
+                    if st.button("📋 データをコピー", use_container_width=True):
                         # 選択された人材の全データを文字列に変換
                         contact_text = "\n".join([f"{k}: {v}" for k, v in selected_contact.items() if pd.notna(v)])
                         st.code(contact_text)
                 with col_action3:
-                    if st.button("🗑️ この人材を削除", width='stretch'):
+                    if st.button("🗑️ この人材を削除", use_container_width=True):
                         # 選択されたコンタクトIDをsession_stateに保存
                         st.session_state.selected_contact_id = selected_contact['contact_id']
                         st.session_state.selected_tab = 3  # 削除タブ（インデックス3）に移動
@@ -1743,7 +1743,7 @@ def show_add_contact():
         with col9:
             building_name = st.text_input("勤務地ビル名", placeholder="○○ビル 5F")
         
-        submitted = st.form_submit_button("🎯 登録", width='stretch', type="primary")
+        submitted = st.form_submit_button("🎯 登録", use_container_width=True, type="primary")
         
         if submitted:
             # バリデーション
@@ -2424,7 +2424,7 @@ def show_projects_list(use_sample_data=False):
                     col_redirect1, col_redirect2 = st.columns([1, 1])
                     
                     with col_redirect1:
-                        if st.button("📝 詳細編集タブで編集", width='stretch', type="primary"):
+                        if st.button("📝 詳細編集タブで編集", use_container_width=True, type="primary"):
                             # 選択された案件IDを保存
                             st.session_state.selected_project_id_from_list = selected_project['project_id']
                             # 詳細編集タブに切り替え
@@ -2450,18 +2450,18 @@ def show_projects_list(use_sample_data=False):
                 st.markdown("---")
                 col_action1, col_action2, col_action3 = st.columns(3)
                 with col_action1:
-                    if st.button("✏️ この案件を詳細編集", width='stretch'):
+                    if st.button("✏️ この案件を詳細編集", use_container_width=True):
                         # 選択された案件IDをsession_stateに保存
                         st.session_state.selected_project_id = selected_project['project_id']
                         st.session_state.selected_project_tab = 2  # 詳細編集タブに移動
                         st.rerun()
                 with col_action2:
-                    if st.button("📋 データをコピー", width='stretch'):
+                    if st.button("📋 データをコピー", use_container_width=True):
                         # 選択された案件の全データを文字列に変換
                         project_text = "\n".join([f"{k}: {v}" for k, v in selected_project.items() if pd.notna(v)])
                         st.code(project_text)
                 with col_action3:
-                    if st.button("🗑️ この案件を削除", width='stretch'):
+                    if st.button("🗑️ この案件を削除", use_container_width=True):
                         # 選択された案件IDをsession_stateに保存
                         st.session_state.selected_project_id = selected_project['project_id']
                         st.session_state.selected_project_tab = 3  # 削除タブに移動
@@ -3124,7 +3124,7 @@ def show_projects_edit():
             work_location = st.text_input("勤務地", value=selected_project.get('work_location', ''))
             education_requirement = st.text_input("学歴要件", value=selected_project.get('education_requirement', ''))
             
-            submitted = st.form_submit_button("🎯 更新", width='stretch', type="primary")
+            submitted = st.form_submit_button("🎯 更新", use_container_width=True, type="primary")
             
             if submitted:
                 try:
@@ -3315,6 +3315,16 @@ def show_masters():
                         'company_phone': company.get('company_phone', ''),
                         'company_address': company.get('company_address', ''),
                         'notes': company.get('notes', ''),
+                        'email_searched': company.get('email_searched', ''),
+                        'linkedin_searched': company.get('linkedin_searched', ''),
+                        'homepage_searched': company.get('homepage_searched', ''),
+                        'eight_search': company.get('eight_search', ''),
+                        'keyword_searches': company.get('keyword_searches', {}),
+                        'other_searches': company.get('other_searches', {}),
+                        'email_search_patterns': company.get('email_search_patterns', {}),
+                        'confirmed_emails': company.get('confirmed_emails', {}),
+                        'misdelivery_emails': company.get('misdelivery_emails', {}),
+                        'email_search_memo': company.get('email_search_memo', ''),
                         'roles': ', '.join(roles) if roles else '未使用',
                         'created_at': company.get('created_at', ''),
                         'updated_at': company.get('updated_at', '')
@@ -3325,16 +3335,20 @@ def show_masters():
                     
                     # 選択可能なデータフレーム表示
                     selected_company = st.dataframe(
-                        df_display[['company_name', 'roles', 'company_url', 'contact_person', 'contact_email', 'created_at']],
+                        df_display[['company_name', 'roles', 'company_url', 'email_searched', 'linkedin_searched', 'homepage_searched', 'eight_search', 'contact_person', 'contact_email', 'created_at']],
                         column_config={
                             'company_name': '企業名',
                             'roles': '役割',
                             'company_url': 'URL',
+                            'email_searched': st.column_config.DateColumn('メール検索'),
+                            'linkedin_searched': st.column_config.DateColumn('LinkedIn検索'),
+                            'homepage_searched': st.column_config.DateColumn('HP検索'),
+                            'eight_search': st.column_config.DateColumn('Eight検索'),
                             'contact_person': '担当者',
                             'contact_email': 'メール',
                             'created_at': st.column_config.DatetimeColumn('作成日')
                         },
-                        width='stretch',
+                        use_container_width=True,
                         on_select="rerun",
                         selection_mode="single-row"
                     )
@@ -3361,6 +3375,18 @@ def show_masters():
                             
                             edited_notes = st.text_area("備考", value=selected_row.get('notes', ''), height=100)
                             
+                            # 検索関連情報セクション
+                            st.markdown("**検索履歴**")
+                            col3, col4 = st.columns(2)
+                            with col3:
+                                edited_email_searched = st.date_input("メール検索日", value=pd.to_datetime(selected_row.get('email_searched')) if selected_row.get('email_searched') else None, format="YYYY-MM-DD")
+                                edited_linkedin_searched = st.date_input("LinkedIn検索日", value=pd.to_datetime(selected_row.get('linkedin_searched')) if selected_row.get('linkedin_searched') else None, format="YYYY-MM-DD")
+                            with col4:
+                                edited_homepage_searched = st.date_input("ホームページ検索日", value=pd.to_datetime(selected_row.get('homepage_searched')) if selected_row.get('homepage_searched') else None, format="YYYY-MM-DD")
+                                edited_eight_search = st.date_input("Eight検索日", value=pd.to_datetime(selected_row.get('eight_search')) if selected_row.get('eight_search') else None, format="YYYY-MM-DD")
+                            
+                            edited_email_search_memo = st.text_area("メール検索メモ", value=selected_row.get('email_search_memo', ''), height=100)
+                            
                             form_col1, form_col2 = st.columns(2)
                             with form_col1:
                                 if st.form_submit_button("💾 更新", type="primary"):
@@ -3374,6 +3400,11 @@ def show_masters():
                                                 'contact_person': edited_contact_person if edited_contact_person else None,
                                                 'contact_email': edited_contact_email if edited_contact_email else None,
                                                 'notes': edited_notes if edited_notes else None,
+                                                'email_searched': edited_email_searched.isoformat() if edited_email_searched else None,
+                                                'linkedin_searched': edited_linkedin_searched.isoformat() if edited_linkedin_searched else None,
+                                                'homepage_searched': edited_homepage_searched.isoformat() if edited_homepage_searched else None,
+                                                'eight_search': edited_eight_search.isoformat() if edited_eight_search else None,
+                                                'email_search_memo': edited_email_search_memo if edited_email_search_memo else None,
                                                 'updated_at': datetime.now().isoformat()
                                             }
                                             
@@ -3428,7 +3459,7 @@ def show_masters():
                     st.info("企業マスタにデータがありません。")
             except Exception as e:
                 st.error(f"企業情報の取得に失敗しました: {str(e)}")
-                st.dataframe(companies, width='stretch')
+                st.dataframe(companies, use_container_width=True)
         else:
             st.info("企業マスタにデータがありません。")
         
@@ -3506,7 +3537,7 @@ def show_masters():
             if available_columns:
                 st.dataframe(
                     display_data[available_columns].fillna(''),
-                    width='stretch',
+                    use_container_width=True,
                     column_config=column_config
                 )
         else:
@@ -3562,7 +3593,7 @@ def show_masters():
         if not masters['search_assignees'].empty:
             st.dataframe(
                 masters['search_assignees'][['assignee_id', 'assignee_name', 'created_at']],
-                width='stretch',
+                use_container_width=True,
                 column_config={
                     "assignee_id": "ID",
                     "assignee_name": "担当者名",
@@ -3596,7 +3627,7 @@ def show_masters():
         if not masters['priority_levels'].empty:
             st.dataframe(
                 masters['priority_levels'][['priority_id', 'priority_name', 'priority_value', 'description', 'created_at']],
-                width='stretch',
+                use_container_width=True,
                 column_config={
                     "priority_id": "ID",
                     "priority_name": "優先度名",
@@ -3643,7 +3674,7 @@ def show_masters():
         if not masters['approach_methods'].empty:
             st.dataframe(
                 masters['approach_methods'][['method_id', 'method_name', 'description', 'created_at']],
-                width='stretch',
+                use_container_width=True,
                 column_config={
                     "method_id": "ID",
                     "method_name": "手法名",
@@ -3841,7 +3872,7 @@ def show_specifications():
             ["updated_at", "TIMESTAMP", "DEFAULT", "NOT NULL", "更新日時"]
         ], columns=["カラム名", "型", "制約", "NULL許可", "説明"])
         
-        st.dataframe(contact_spec, width='stretch', hide_index=True)
+        st.dataframe(contact_spec, use_container_width=True, hide_index=True)
         
         # マスターテーブル
         st.markdown("### ⚙️ マスターテーブル")
@@ -3883,7 +3914,7 @@ def show_specifications():
         for table_name, spec in master_tables.items():
             st.markdown(f"#### {table_name}")
             df_spec = pd.DataFrame(spec, columns=["カラム名", "型", "制約", "NULL許可", "説明"])
-            st.dataframe(df_spec, width='stretch', hide_index=True)
+            st.dataframe(df_spec, use_container_width=True, hide_index=True)
         
         # ビュー
         st.markdown("### 👁️ ビュー")
@@ -3988,7 +4019,7 @@ def show_specifications():
             ["📊 統合分析", "Dashboard拡張", "案件・人材統合ダッシュボード", "KPI・可視化強化"]
         ], columns=["機能", "テーブル/実装", "説明", "詳細"])
         
-        st.dataframe(new_features, width='stretch', hide_index=True)
+        st.dataframe(new_features, use_container_width=True, hide_index=True)
         
         st.markdown("### 🔧 技術的改善")
         
@@ -4000,7 +4031,7 @@ def show_specifications():
             ["UI/UX改善", "案件管理ページ追加", "直感的な案件・アサイン管理"]
         ], columns=["改善項目", "内容", "効果"])
         
-        st.dataframe(improvements, width='stretch', hide_index=True)
+        st.dataframe(improvements, use_container_width=True, hide_index=True)
         
         st.markdown("### 📈 システム効果")
         
@@ -4037,7 +4068,7 @@ def show_specifications():
             ["✅ 完了", "システムUI更新", "案件管理画面追加"]
         ], columns=["状況", "作業内容", "説明"])
         
-        st.dataframe(migration_status, width='stretch', hide_index=True)
+        st.dataframe(migration_status, use_container_width=True, hide_index=True)
         
         st.markdown("### 🚀 今後の拡張予定")
         
@@ -4667,7 +4698,7 @@ def show_data_import():
             data=company_sample,
             file_name="企業データサンプル.csv",
             mime="text/csv",
-            width='stretch'
+            use_container_width=True
         )
     
     with col2:
@@ -4678,7 +4709,7 @@ def show_data_import():
             data=project_sample,
             file_name="案件データサンプル.csv",
             mime="text/csv",
-            width='stretch'
+            use_container_width=True
         )
     
     with col3:
@@ -4689,7 +4720,7 @@ def show_data_import():
             data=contact_sample,
             file_name="コンタクトデータサンプル.csv",
             mime="text/csv",
-            width='stretch'
+            use_container_width=True
         )
     
     st.markdown("---")
@@ -5481,7 +5512,7 @@ def show_search_progress():
             progress_data.append(company_progress)
         
         progress_df = pd.DataFrame(progress_data)
-        st.dataframe(progress_df, width='stretch')
+        st.dataframe(progress_df, use_container_width=True)
         
     except Exception as e:
         st.error(f"データ取得エラー: {str(e)}")
@@ -6020,9 +6051,9 @@ def show_company_management():
             available_columns = [col for col in display_columns if col in df.columns]
             
             if available_columns:
-                st.dataframe(df[available_columns], width='stretch')
+                st.dataframe(df[available_columns], use_container_width=True)
             else:
-                st.dataframe(df, width='stretch')
+                st.dataframe(df, use_container_width=True)
         else:
             st.info("企業データがありません")
     
