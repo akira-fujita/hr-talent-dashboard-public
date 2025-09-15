@@ -7,6 +7,86 @@ import numpy as np
 from supabase import create_client
 
 
+# ========================================
+# UI統一コンポーネント
+# ========================================
+
+class UIComponents:
+    """統一されたUIコンポーネント"""
+    
+    # ボタンスタイル定義
+    PRIMARY_BUTTON = {"type": "primary", "use_container_width": True}
+    SECONDARY_BUTTON = {"type": "secondary", "use_container_width": True}
+    
+    @staticmethod
+    def show_success(message):
+        """統一された成功メッセージ"""
+        st.success(f"✅ {message}")
+    
+    @staticmethod 
+    def show_error(message):
+        """統一されたエラーメッセージ"""
+        st.error(f"❌ {message}")
+        
+    @staticmethod
+    def show_warning(message):
+        """統一された警告メッセージ"""
+        st.warning(f"⚠️ {message}")
+        
+    @staticmethod
+    def show_info(message):
+        """統一された情報メッセージ"""
+        st.info(f"💡 {message}")
+    
+    @staticmethod
+    def primary_button(label, key=None, disabled=False):
+        """プライマリボタン"""
+        return st.button(label, key=key, disabled=disabled, **UIComponents.PRIMARY_BUTTON)
+    
+    @staticmethod
+    def secondary_button(label, key=None, disabled=False):
+        """セカンダリボタン"""
+        return st.button(label, key=key, disabled=disabled, **UIComponents.SECONDARY_BUTTON)
+
+
+# ========================================
+# エラーハンドリング
+# ========================================
+
+class ErrorHandler:
+    """ユーザーフレンドリーなエラーハンドリング"""
+    
+    USER_MESSAGES = {
+        "DATABASE_CONNECTION": "データベースに接続できません。しばらく待ってから再試行してください。",
+        "VALIDATION_ERROR": "入力内容を確認してください。",
+        "PERMISSION_ERROR": "この操作を実行する権限がありません。",
+        "NOT_FOUND": "該当するデータが見つかりません。",
+        "DUPLICATE_ERROR": "同じデータが既に存在します。",
+        "IMPORT_ERROR": "ファイルのインポートに失敗しました。ファイル形式を確認してください。",
+        "EXPORT_ERROR": "データのエクスポートに失敗しました。",
+        "NETWORK_ERROR": "ネットワーク接続を確認してください。"
+    }
+    
+    @classmethod
+    def show_error(cls, error_type, technical_details=None, show_details=False):
+        """ユーザーフレンドリーなエラー表示"""
+        user_message = cls.USER_MESSAGES.get(error_type, "予期しないエラーが発生しました。")
+        UIComponents.show_error(user_message)
+        
+        if technical_details and (show_details or st.checkbox("🐛 詳細情報を表示")):
+            st.code(technical_details)
+    
+    @classmethod
+    def handle_database_error(cls, error):
+        """データベースエラーの統一処理"""
+        if "connection" in str(error).lower():
+            cls.show_error("DATABASE_CONNECTION", str(error))
+        elif "not found" in str(error).lower():
+            cls.show_error("NOT_FOUND", str(error))
+        else:
+            cls.show_error("DATABASE_CONNECTION", str(error))
+
+
 # URLパラメータ管理用のヘルパー関数
 def get_url_param(key, default=""):
     """URLパラメータから値を取得するヘルパー関数"""
@@ -111,7 +191,7 @@ def init_supabase():
         key = st.secrets["SUPABASE_ANON_KEY"]
         return create_client(url, key)
     except Exception as e:
-        st.error(f"Supabase接続エラー: {str(e)}")
+        ErrorHandler.show_error("DATABASE_CONNECTION", str(e))
         # サンプルデータにフォールバック
         return None
 
@@ -177,7 +257,7 @@ def fetch_contacts():
             # データが空の場合はサンプルデータを使用
             return generate_sample_data()
     except Exception as e:
-        st.warning(f"データベース接続エラー: {str(e)} - サンプルデータを使用します")
+        UIComponents.show_warning(f"データベース接続エラー: {str(e)} - サンプルデータを使用します")
         return generate_sample_data()
 
 
@@ -511,7 +591,7 @@ def fetch_contact_approaches(contact_id):
         else:
             return pd.DataFrame()
     except Exception as e:
-        st.error(f"アプローチ履歴取得エラー: {str(e)}")
+        ErrorHandler.handle_database_error(e)
         return pd.DataFrame()
 
 
@@ -546,7 +626,7 @@ def fetch_project_assignments_for_contact(contact_id):
         else:
             return pd.DataFrame()
     except Exception as e:
-        st.error(f"案件アサイン履歴取得エラー: {str(e)}")
+        ErrorHandler.handle_database_error(e)
         return pd.DataFrame()
 
 
@@ -571,6 +651,7 @@ def main():
         "📧 メール管理": "email_management",
         # "🏢 企業管理": "company_management",
         "📥 データインポート": "import",
+        "📤 データエクスポート": "export",
         "⚙️ マスタ管理": "masters",
         # "📋 DB仕様書": "specifications"
     }
@@ -599,7 +680,7 @@ def main():
     use_sample_data = st.sidebar.checkbox("🎯 サンプルデータを使用", value=True, help="実際のデータが少ない場合に有効にしてください")
     
     # データ更新ボタン
-    if st.sidebar.button("🔄 データ更新", use_container_width=True):
+    if st.sidebar.button("🔄 データ更新", width="stretch"):
         st.cache_data.clear()
         st.sidebar.success("データを更新しました")
         st.rerun()
@@ -623,6 +704,8 @@ def main():
         show_company_management()
     elif page_key == "import":
         show_data_import()
+    elif page_key == "export":
+        show_data_export()
     elif page_key == "masters":
         show_masters()
     elif page_key == "specifications":
@@ -638,9 +721,14 @@ def fetch_recruitment_kpis():
         return generate_sample_recruitment_kpis()
     
     try:
-        # 案件データ取得（新しい多対多関係対応）
+        # 案件データ取得（シンプルなクエリでエラーを減らす）
         projects_response = supabase.table('projects').select(
-            '*, client_companies(company_name), project_assignments(assignment_id, assignment_status, contact_id), project_target_companies(id, target_companies(target_company_id, company_name), department_name, priority_levels(priority_id, priority_name, priority_value))'
+            'project_id, project_name, project_status, required_headcount, created_at, target_company_id, client_company_id'
+        ).execute()
+
+        # 別途必要なリレーションデータを取得
+        assignments_response = supabase.table('project_assignments').select(
+            'assignment_id, assignment_status, contact_id, project_id'
         ).execute()
         
         # コンタクトデータ取得
@@ -656,14 +744,23 @@ def fetch_recruitment_kpis():
         # 担当者データ取得
         assignees_response = supabase.table('search_assignees').select('*').execute()
         
+        # データフレーム作成とカラム名の正規化
+        projects_df = pd.DataFrame(projects_response.data) if projects_response.data else pd.DataFrame()
+        if not projects_df.empty and 'project_status' in projects_df.columns:
+            projects_df = projects_df.rename(columns={'project_status': 'status'})
+
         return {
-            'projects': pd.DataFrame(projects_response.data) if projects_response.data else pd.DataFrame(),
+            'projects': projects_df,
             'contacts': pd.DataFrame(contacts_response.data) if contacts_response.data else pd.DataFrame(),
             'approaches': pd.DataFrame(approaches_response.data) if approaches_response.data else pd.DataFrame(),
-            'assignees': pd.DataFrame(assignees_response.data) if assignees_response.data else pd.DataFrame()
+            'assignees': pd.DataFrame(assignees_response.data) if assignees_response.data else pd.DataFrame(),
+            'assignments': pd.DataFrame(assignments_response.data) if assignments_response.data else pd.DataFrame()
         }
     except Exception as e:
-        st.warning(f"KPIデータ取得エラー: {str(e)} - サンプルデータを使用します")
+        error_msg = f"KPIデータ取得エラー: {str(e)}"
+        if "Server disconnected" in str(e):
+            error_msg += " - データベース接続が切断されました。少し待ってから再試行してください。"
+        UIComponents.show_warning(f"{error_msg} - サンプルデータを使用します")
         return generate_sample_recruitment_kpis()
 
 
@@ -689,7 +786,7 @@ def generate_sample_recruitment_kpis():
             if contacts_response.data:
                 actual_contacts = contacts_response.data
         except Exception as e:
-            st.warning(f"実データ取得エラー: {str(e)} - フォールバックデータを使用")
+            UIComponents.show_warning(f"実データ取得エラー: {str(e)} - フォールバックデータを使用")
     
     # フォールバックまたは取得したデータに基づく設定
     if actual_companies:
@@ -824,11 +921,11 @@ def show_dashboard(use_sample_data=False):
     
     # データソース表示
     if use_sample_data:
-        st.info(f"🎯 サンプルデータを表示中（案件{len(projects_df)}件、候補者{len(contacts_df)}人）")
+        UIComponents.show_info(f"🎯 サンプルデータを表示中（案件{len(projects_df)}件、候補者{len(contacts_df)}人）")
     elif not projects_df.empty and 'project_name' in projects_df.columns:
-        st.success(f"✅ データベース接続中（案件{len(projects_df)}件、候補者{len(contacts_df)}人）")
+        UIComponents.show_success(f"データベース接続中（案件{len(projects_df)}件、候補者{len(contacts_df)}人）")
     else:
-        st.warning("⚠️ データが見つかりません。サンプルデータを使用するには左側のチェックボックスを有効にしてください")
+        UIComponents.show_warning("データが見つかりません。サンプルデータを使用するには左側のチェックボックスを有効にしてください")
     
     # 🎯 案件管理KPIセクション
     st.markdown("### 🎯 案件管理KPI")
@@ -889,9 +986,9 @@ def show_dashboard(use_sample_data=False):
                     names=status_counts.index,
                     color_discrete_map={'OPEN': '#FF6B6B', 'CLOSED': '#4ECDC4', 'PENDING': '#FFE66D'}
                 )
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(fig_pie, width="stretch")
             else:
-                st.info("データがありません")
+                UIComponents.show_info("データがありません")
         
         with col2:
             st.subheader("案件別候補者数")
@@ -914,11 +1011,11 @@ def show_dashboard(use_sample_data=False):
                     title="案件別候補者数（TOP10）"
                 )
                 fig_bar.update_layout(xaxis_title="案件名", yaxis_title="候補者数")
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.plotly_chart(fig_bar, width="stretch")
             else:
-                st.info("データがありません")
+                UIComponents.show_info("データがありません")
     else:
-        st.warning("案件データが見つかりません")
+        UIComponents.show_warning("案件データが見つかりません")
     
     # 👥 人材・候補者KPIセクション
     st.markdown("### 👥 人材・候補者KPI")
@@ -970,9 +1067,9 @@ def show_dashboard(use_sample_data=False):
                     color_discrete_map={'未実施': '#FFB6C1', '実施中': '#FFE66D', '実施済み': '#90EE90'}
                 )
                 fig_screening.update_layout(xaxis_title="スクリーニング状況", yaxis_title="候補者数")
-                st.plotly_chart(fig_screening, use_container_width=True)
+                st.plotly_chart(fig_screening, width="stretch")
             else:
-                st.info("データがありません")
+                UIComponents.show_info("データがありません")
         
         with col2:
             st.subheader("候補者アサイン状況")
@@ -987,9 +1084,9 @@ def show_dashboard(use_sample_data=False):
                 names='status',
                 color_discrete_map={'アクティブ': '#FF6B6B', '待機中': '#FFE66D', '成約済み': '#4ECDC4'}
             )
-            st.plotly_chart(fig_assignment, use_container_width=True)
+            st.plotly_chart(fig_assignment, width="stretch")
     else:
-        st.warning("候補者データが見つかりません")
+        UIComponents.show_warning("候補者データが見つかりません")
     
     # 📞 営業・アプローチKPIセクション
     st.markdown("### 📞 営業・アプローチKPI")
@@ -1031,9 +1128,9 @@ def show_dashboard(use_sample_data=False):
                     color=method_counts.index
                 )
                 fig_methods.update_layout(xaxis_title="アプローチ手法", yaxis_title="実施回数")
-                st.plotly_chart(fig_methods, use_container_width=True)
+                st.plotly_chart(fig_methods, width="stretch")
             else:
-                st.info("データがありません")
+                UIComponents.show_info("データがありません")
         
         with col2:
             st.subheader("月次アプローチ推移")
@@ -1048,13 +1145,13 @@ def show_dashboard(use_sample_data=False):
                         title="月次アプローチ数推移"
                     )
                     fig_monthly.update_layout(xaxis_title="月", yaxis_title="アプローチ数")
-                    st.plotly_chart(fig_monthly, use_container_width=True)
+                    st.plotly_chart(fig_monthly, width="stretch")
                 else:
-                    st.info("データがありません")
+                    UIComponents.show_info("データがありません")
             else:
-                st.info("データがありません")
+                UIComponents.show_info("データがありません")
     else:
-        st.warning("アプローチデータが見つかりません")
+        UIComponents.show_warning("アプローチデータが見つかりません")
     
     # 📊 パフォーマンス分析セクション
     st.markdown("### 📊 担当者別パフォーマンス")
@@ -1077,9 +1174,9 @@ def show_dashboard(use_sample_data=False):
                     color_continuous_scale='viridis'
                 )
                 fig_co.update_layout(xaxis_title="CO担当者", yaxis_title="成約数")
-                st.plotly_chart(fig_co, use_container_width=True)
+                st.plotly_chart(fig_co, width="stretch")
             else:
-                st.info("成約実績データがありません")
+                UIComponents.show_info("成約実績データがありません")
         
         with col2:
             st.subheader("RE別成約実績")
@@ -1091,11 +1188,11 @@ def show_dashboard(use_sample_data=False):
                     color_continuous_scale='plasma'
                 )
                 fig_re.update_layout(xaxis_title="RE担当者", yaxis_title="成約数")
-                st.plotly_chart(fig_re, use_container_width=True)
+                st.plotly_chart(fig_re, width="stretch")
             else:
-                st.info("成約実績データがありません")
+                UIComponents.show_info("成約実績データがありません")
     else:
-        st.warning("担当者データまたは案件ステータスが見つかりません")
+        UIComponents.show_warning("担当者データまたは案件ステータスが見つかりません")
 
 
 def show_contacts():
@@ -1112,11 +1209,11 @@ def show_contacts():
         st.markdown("### 📍 ナビゲーション")
         nav_col1, nav_col2, nav_col3 = st.columns([2, 1, 2])
         with nav_col1:
-            st.info("🎯 案件管理")
+            UIComponents.show_info("🎯 案件管理")
         with nav_col2:
             st.markdown("**→**")
         with nav_col3:
-            st.success("👥 コンタクト詳細")
+            UIComponents.show_success("👥 コンタクト詳細")
         st.markdown("---")
         
         st.session_state.selected_contact_id = int(url_contact_id)
@@ -1136,7 +1233,7 @@ def show_contacts():
             with st.container():
                 back_col1, back_col2 = st.columns([1, 4])
                 with back_col1:
-                    if st.button("⬅️ 案件管理に戻る", key="top_back_to_projects", type="secondary"):
+                    if UIComponents.secondary_button("⬅️ 案件管理に戻る", key="top_back_to_projects"):
                         # セッション履歴を使用して戻る
                         if hasattr(st.session_state, 'navigation_history') and st.session_state.navigation_history:
                             back_url = st.session_state.navigation_history.get('from_url', '?page=projects')
@@ -1151,20 +1248,20 @@ def show_contacts():
                         st.rerun()
                 st.markdown("---")
         
-        st.success("📝 編集対象が選択されました。編集画面を表示しています...")
+        UIComponents.show_success("📝 編集対象が選択されました。編集画面を表示しています...")
         show_contacts_edit()
         
         # 編集後にタブをリセット
         st.markdown("---")
         col_back1, col_back2 = st.columns(2)
         with col_back1:
-            if st.button("📋 コンタクト一覧に戻る", key="back_from_edit"):
+            if UIComponents.secondary_button("📋 コンタクト一覧に戻る", key="back_from_edit"):
                 st.session_state.selected_tab = 0
                 if 'selected_contact_id' in st.session_state:
                     del st.session_state.selected_contact_id
                 st.rerun()
         with col_back2:
-            if from_projects and st.button("🎯 案件管理に戻る", key="back_to_projects"):
+            if from_projects and UIComponents.secondary_button("🎯 案件管理に戻る", key="back_to_projects"):
                 # セッション履歴を使用して戻る
                 if hasattr(st.session_state, 'navigation_history') and st.session_state.navigation_history:
                     back_url = st.session_state.navigation_history.get('from_url', '?page=projects')
@@ -1180,10 +1277,10 @@ def show_contacts():
         return
     elif st.session_state.selected_tab == 3:
         # 削除タブを直接表示
-        st.warning("🗑️ 削除対象が選択されました。削除画面を表示しています...")
+        UIComponents.show_warning("🗑️ 削除対象が選択されました。削除画面を表示しています...")
         show_contacts_delete()
         # 削除後にタブをリセット
-        if st.button("一覧に戻る", key="back_from_delete"):
+        if UIComponents.secondary_button("一覧に戻る", key="back_from_delete"):
             st.session_state.selected_tab = 0
             if 'selected_contact_id' in st.session_state:
                 del st.session_state.selected_contact_id
@@ -1207,7 +1304,7 @@ def show_contacts():
     with tab_list[2]:
         show_contacts_edit()
         # 編集後にタブをリセット
-        if st.button("一覧に戻る", key="back_from_edit_tab"):
+        if UIComponents.secondary_button("一覧に戻る", key="back_from_edit_tab"):
             st.session_state.selected_tab = 0
             if 'selected_contact_id' in st.session_state:
                 del st.session_state.selected_contact_id
@@ -1226,14 +1323,14 @@ def show_contacts_list():
     df = fetch_contacts()
     
     if df.empty:
-        st.warning("データが見つかりません。")
+        UIComponents.show_warning("データが見つかりません。")
         return
     
     # サンプルデータかどうかを判定
     is_sample_data = 'company' in df.columns and df['company'].str.contains('Demo Company サンプル', na=False).any()
     
     if is_sample_data:
-        st.info("💡 現在表示されているのはデモ用のサンプルデータです。編集・削除機能を使用するには、「新規登録」タブから実際のデータを登録してください。")
+        UIComponents.show_info("💡 現在表示されているのはデモ用のサンプルデータです。編集・削除機能を使用するには、「新規登録」タブから実際のデータを登録してください。")
     
     # URLパラメータから初期値を取得
     default_search = get_url_param("contact_search", "")
@@ -1389,7 +1486,7 @@ def show_contacts_list():
             # 選択可能なデータフレームとして表示
             selected_row = st.dataframe(
                 filtered_df[display_columns].fillna(''),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config=column_config,
                 height=400,
@@ -1608,10 +1705,10 @@ def show_contacts_list():
                     
                     if all_data:
                         df_all = pd.DataFrame(all_data)
-                        st.dataframe(df_all, use_container_width=True, height=400)
+                        st.dataframe(df_all, width="stretch", height=400)
                         
                         # データエクスポートボタン
-                        if st.button("📥 全データをCSV形式でダウンロード", key="export_data"):
+                        if UIComponents.primary_button("📥 全データをCSV形式でダウンロード", key="export_data"):
                             csv = df_all.to_csv(index=False, encoding='utf-8-sig')
                             st.download_button(
                                 label="CSVファイルをダウンロード",
@@ -1639,18 +1736,18 @@ def show_contacts_list():
                 st.markdown("---")
                 col_action1, col_action2, col_action3 = st.columns(3)
                 with col_action1:
-                    if st.button("✏️ この人材を編集", use_container_width=True):
+                    if UIComponents.primary_button("✏️ この人材を編集"):
                         # 選択されたコンタクトIDをsession_stateに保存
                         st.session_state.selected_contact_id = selected_contact['contact_id']
                         st.session_state.selected_tab = 2  # 詳細編集タブ（インデックス2）に移動
                         st.rerun()
                 with col_action2:
-                    if st.button("📋 データをコピー", use_container_width=True):
+                    if UIComponents.secondary_button("📋 データをコピー"):
                         # 選択された人材の全データを文字列に変換
                         contact_text = "\n".join([f"{k}: {v}" for k, v in selected_contact.items() if pd.notna(v)])
                         st.code(contact_text)
                 with col_action3:
-                    if st.button("🗑️ この人材を削除", use_container_width=True):
+                    if UIComponents.secondary_button("🗑️ この人材を削除"):
                         # 選択されたコンタクトIDをsession_stateに保存
                         st.session_state.selected_contact_id = selected_contact['contact_id']
                         st.session_state.selected_tab = 3  # 削除タブ（インデックス3）に移動
@@ -1781,12 +1878,12 @@ def show_add_contact():
         with col9:
             building_name = st.text_input("勤務地ビル名", placeholder="○○ビル 5F")
         
-        submitted = st.form_submit_button("🎯 登録", use_container_width=True, type="primary")
+        submitted = st.form_submit_button("🎯 登録", width="stretch", type="primary")
         
         if submitted:
             # バリデーション
             if not last_name or not first_name or not selected_company or not selected_priority_display:
-                st.error("姓、名、企業名、優先度は必須項目です。")
+                UIComponents.show_error("姓、名、企業名、優先度は必須項目です。")
                 return
             
             try:
@@ -1853,7 +1950,7 @@ def show_add_contact():
                         try:
                             supabase.table('work_locations').insert(work_location_data).execute()
                         except Exception as e:
-                            st.warning(f"勤務地情報の登録でエラー: {str(e)}")
+                            UIComponents.show_warning(f"勤務地情報の登録でエラー: {str(e)}")
                     
                     # AP履歴の挿入（contact_approachesテーブル）
                     if contact_id:
@@ -1873,13 +1970,13 @@ def show_add_contact():
                                     except Exception as e:
                                         st.warning(f"AP履歴{i}の登録でエラー: {str(e)}")
                     
-                    st.success("✅ コンタクトが正常に登録されました！")
+                    UIComponents.show_success("コンタクトが正常に登録されました！")
                     st.cache_data.clear()
                 else:
-                    st.error("❌ 登録に失敗しました")
+                    UIComponents.show_error("登録に失敗しました")
                 
             except Exception as e:
-                st.error(f"❌ 登録エラー: {str(e)}")
+                ErrorHandler.show_error("VALIDATION_ERROR", str(e))
 
 
 def show_projects(use_sample_data=False):
@@ -1893,7 +1990,7 @@ def show_projects(use_sample_data=False):
     # セッション状態に基づいて表示するコンテンツを決める
     if st.session_state.selected_project_tab == 2:
         # 編集タブを直接表示
-        st.success("📝 編集対象が選択されました。編集画面を表示しています...")
+        UIComponents.show_success("📝 編集対象が選択されました。編集画面を表示しています...")
         show_projects_edit()
         # 編集後にタブをリセット
         if st.button("一覧に戻る", key="back_from_project_edit"):
@@ -1903,7 +2000,7 @@ def show_projects(use_sample_data=False):
         return
     elif st.session_state.selected_project_tab == 3:
         # 削除タブを直接表示
-        st.warning("🗑️ 削除対象が選択されました。削除画面を表示しています...")
+        UIComponents.show_warning("🗑️ 削除対象が選択されました。削除画面を表示しています...")
         show_projects_delete()
         # 削除後にタブをリセット
         if st.button("一覧に戻る", key="back_from_project_delete"):
@@ -2795,7 +2892,7 @@ def show_projects_list(use_sample_data=False):
                     col_redirect1, col_redirect2 = st.columns([1, 1])
                     
                     with col_redirect1:
-                        if st.button("📝 詳細編集タブで編集", use_container_width=True, type="primary"):
+                        if st.button("📝 詳細編集タブで編集", width="stretch", type="primary"):
                             # 選択された案件IDを保存
                             st.session_state.selected_project_id_from_list = selected_project['project_id']
                             # 詳細編集タブに切り替え
@@ -2821,18 +2918,18 @@ def show_projects_list(use_sample_data=False):
                 st.markdown("---")
                 col_action1, col_action2, col_action3 = st.columns(3)
                 with col_action1:
-                    if st.button("✏️ この案件を詳細編集", use_container_width=True):
+                    if st.button("✏️ この案件を詳細編集", width="stretch"):
                         # 選択された案件IDをsession_stateに保存
                         st.session_state.selected_project_id = selected_project['project_id']
                         st.session_state.selected_project_tab = 2  # 詳細編集タブに移動
                         st.rerun()
                 with col_action2:
-                    if st.button("📋 データをコピー", use_container_width=True):
+                    if UIComponents.secondary_button("📋 データをコピー"):
                         # 選択された案件の全データを文字列に変換
                         project_text = "\n".join([f"{k}: {v}" for k, v in selected_project.items() if pd.notna(v)])
                         st.code(project_text)
                 with col_action3:
-                    if st.button("🗑️ この案件を削除", use_container_width=True):
+                    if st.button("🗑️ この案件を削除", width="stretch"):
                         # 選択された案件IDをsession_stateに保存
                         st.session_state.selected_project_id = selected_project['project_id']
                         st.session_state.selected_project_tab = 3  # 削除タブに移動
@@ -3236,9 +3333,12 @@ def show_projects_edit():
         response = supabase.table('projects').select(
             '*, project_target_companies(id, target_company_id, department_name, priority_id, target_companies(target_company_id, company_name), priority_levels(priority_id, priority_name, priority_value))'
         ).execute()
-        
+
         if response.data:
             df = pd.DataFrame(response.data)
+            # project_statusをstatusにリネーム（アプリ内の一貫性のため）
+            if 'project_status' in df.columns:
+                df = df.rename(columns={'project_status': 'status'})
         else:
             df = pd.DataFrame()
     except Exception as e:
@@ -3247,9 +3347,11 @@ def show_projects_edit():
         # フォールバック: より少ない情報で基本的なプロジェクトリストを取得
         try:
             st.info("基本情報のみで案件リストを表示します...")
-            simple_response = supabase.table('projects').select('project_id, project_name, status').execute()
+            simple_response = supabase.table('projects').select('project_id, project_name, project_status').execute()
             if simple_response.data:
                 df = pd.DataFrame(simple_response.data)
+                # project_statusをstatusにリネーム（アプリ内の一貫性のため）
+                df = df.rename(columns={'project_status': 'status'})
                 # 空のproject_target_companiesを追加
                 df['project_target_companies'] = [[] for _ in range(len(df))]
             else:
@@ -3469,9 +3571,9 @@ def show_projects_edit():
                         if target_to_delete.get('id'):
                             try:
                                 supabase.table('project_target_companies').delete().eq('id', target_to_delete['id']).execute()
-                                st.success(f"✅ 「{target_to_delete['company_name']} - {target_to_delete['department_name']}」を削除しました！")
+                                UIComponents.show_success(f"「{target_to_delete['company_name']} - {target_to_delete['department_name']}」を削除しました！")
                             except Exception as e:
-                                st.error(f"❌ 削除エラー: {str(e)}")
+                                ErrorHandler.handle_database_error(e)
                                 return  # エラー時は削除を中止
                         
                         # セッション状態から削除
@@ -3630,7 +3732,7 @@ def show_projects_edit():
                 special_notes = st.text_area("特記事項", height=60, value=selected_project.get('special_notes', ''))
                 internal_notes = st.text_area("社内メモ", height=60, value=selected_project.get('internal_notes', ''))
             
-            submitted = st.form_submit_button("🎯 更新", use_container_width=True, type="primary")
+            submitted = st.form_submit_button("🎯 更新", width="stretch", type="primary")
             
             if submitted:
                 try:
@@ -3643,7 +3745,7 @@ def show_projects_edit():
                     # projectsテーブルの更新（数値型をint()で変換、None値チェック）
                     update_data = {
                         'project_name': project_name,
-                        'status': status,
+                        'project_status': status,
                         'contract_start_date': contract_start_date.isoformat() if contract_start_date else None,
                         'contract_end_date': contract_end_date.isoformat() if contract_end_date else None,
                         'required_headcount': int(required_headcount) if required_headcount is not None else 1,
@@ -3732,11 +3834,11 @@ def show_projects_edit():
                     
                     # 担当者数をカウント
                     manager_count = len([m for m in managers_data if m['name'].strip()])
-                    st.success(f"✅ 案件が正常に更新されました！（ターゲット設定: {target_count}件、担当者: {manager_count}人）")
+                    UIComponents.show_success(f"案件が正常に更新されました！（ターゲット設定: {target_count}件、担当者: {manager_count}人）")
                     st.cache_data.clear()
                     
                 except Exception as e:
-                    st.error(f"❌ 更新エラー: {str(e)}")
+                    ErrorHandler.handle_database_error(e)
 
 
 def show_projects_delete():
@@ -3754,11 +3856,14 @@ def show_projects_delete():
         ).execute()
         if response.data:
             df = pd.DataFrame(response.data)
+            # project_statusをstatusにリネーム（アプリ内の一貫性のため）
+            if 'project_status' in df.columns:
+                df = df.rename(columns={'project_status': 'status'})
         else:
             df = pd.DataFrame()
     except:
         df = pd.DataFrame()
-    
+
     if df.empty:
         st.info("データベースに登録された案件がありません。削除可能なデータがありません。")
         return
@@ -3806,7 +3911,7 @@ def show_projects_delete():
                     # 最後にprojectsテーブルから削除
                     response = supabase.table('projects').delete().eq('project_id', project_id).execute()
                     
-                    st.success(f"案件「{selected_project.get('project_name', 'N/A')}」が正常に削除されました")
+                    UIComponents.show_success(f"案件「{selected_project.get('project_name', 'N/A')}」が正常に削除されました")
                     st.cache_data.clear()
                     st.rerun()
                     
@@ -4110,7 +4215,7 @@ def show_masters():
                             'contact_email': 'メール',
                             'created_at': st.column_config.DatetimeColumn('作成日')
                         },
-                        use_container_width=True,
+                        width="stretch",
                         on_select="rerun",
                         selection_mode="single-row"
                     )
@@ -4180,7 +4285,7 @@ def show_masters():
                                             else:
                                                 st.error("❌ 更新に失敗しました")
                                         except Exception as e:
-                                            st.error(f"❌ 更新エラー: {str(e)}")
+                                            ErrorHandler.handle_database_error(e)
                                     else:
                                         st.error("企業名を入力してください")
                             
@@ -4213,7 +4318,7 @@ def show_masters():
                                             else:
                                                 st.error("❌ 削除に失敗しました")
                                     except Exception as e:
-                                        st.error(f"❌ 削除エラー: {str(e)}")
+                                        ErrorHandler.handle_database_error(e)
                         
                         st.info("💡 削除は関連するコンタクトや案件で使用されていない場合のみ可能です。")
                 
@@ -4221,7 +4326,7 @@ def show_masters():
                     st.info("企業マスタにデータがありません。")
             except Exception as e:
                 st.error(f"企業情報の取得に失敗しました: {str(e)}")
-                st.dataframe(companies, use_container_width=True)
+                st.dataframe(companies, width="stretch")
         else:
             st.info("企業マスタにデータがありません。")
         
@@ -4299,7 +4404,7 @@ def show_masters():
             if available_columns:
                 st.dataframe(
                     display_data[available_columns].fillna(''),
-                    use_container_width=True,
+                    width="stretch",
                     column_config=column_config
                 )
         else:
@@ -4355,7 +4460,7 @@ def show_masters():
         if not masters['search_assignees'].empty:
             st.dataframe(
                 masters['search_assignees'][['assignee_id', 'assignee_name', 'created_at']],
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "assignee_id": "ID",
                     "assignee_name": "担当者名",
@@ -4389,7 +4494,7 @@ def show_masters():
         if not masters['priority_levels'].empty:
             st.dataframe(
                 masters['priority_levels'][['priority_id', 'priority_name', 'priority_value', 'description', 'created_at']],
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "priority_id": "ID",
                     "priority_name": "優先度名",
@@ -4436,7 +4541,7 @@ def show_masters():
         if not masters['approach_methods'].empty:
             st.dataframe(
                 masters['approach_methods'][['method_id', 'method_name', 'description', 'created_at']],
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "method_id": "ID",
                     "method_name": "手法名",
@@ -4691,7 +4796,7 @@ def show_specifications():
             ["updated_at", "TIMESTAMP", "DEFAULT", "NOT NULL", "更新日時"]
         ], columns=["カラム名", "型", "制約", "NULL許可", "説明"])
         
-        st.dataframe(contact_spec, use_container_width=True, hide_index=True)
+        st.dataframe(contact_spec, width="stretch", hide_index=True)
         
         # マスターテーブル
         st.markdown("### ⚙️ マスターテーブル")
@@ -4733,7 +4838,7 @@ def show_specifications():
         for table_name, spec in master_tables.items():
             st.markdown(f"#### {table_name}")
             df_spec = pd.DataFrame(spec, columns=["カラム名", "型", "制約", "NULL許可", "説明"])
-            st.dataframe(df_spec, use_container_width=True, hide_index=True)
+            st.dataframe(df_spec, width="stretch", hide_index=True)
         
         # ビュー
         st.markdown("### 👁️ ビュー")
@@ -4838,7 +4943,7 @@ def show_specifications():
             ["📊 統合分析", "Dashboard拡張", "案件・人材統合ダッシュボード", "KPI・可視化強化"]
         ], columns=["機能", "テーブル/実装", "説明", "詳細"])
         
-        st.dataframe(new_features, use_container_width=True, hide_index=True)
+        st.dataframe(new_features, width="stretch", hide_index=True)
         
         st.markdown("### 🔧 技術的改善")
         
@@ -4850,7 +4955,7 @@ def show_specifications():
             ["UI/UX改善", "案件管理ページ追加", "直感的な案件・アサイン管理"]
         ], columns=["改善項目", "内容", "効果"])
         
-        st.dataframe(improvements, use_container_width=True, hide_index=True)
+        st.dataframe(improvements, width="stretch", hide_index=True)
         
         st.markdown("### 📈 システム効果")
         
@@ -4887,7 +4992,7 @@ def show_specifications():
             ["✅ 完了", "システムUI更新", "案件管理画面追加"]
         ], columns=["状況", "作業内容", "説明"])
         
-        st.dataframe(migration_status, use_container_width=True, hide_index=True)
+        st.dataframe(migration_status, width="stretch", hide_index=True)
         
         st.markdown("### 🚀 今後の拡張予定")
         
@@ -5474,23 +5579,50 @@ def show_contacts_delete():
         
         if confirm_delete:
             if st.button("🗑️ 削除実行", type="primary"):
+                deletion_steps = []
                 try:
                     # 関連データも削除する必要がある場合は先に削除
                     # (外部キー制約により)
-                    
-                    # まず関連するproject_assignmentsを削除
-                    supabase.table('project_assignments').delete().eq('contact_id', contact_id).execute()
-                    
-                    # 関連するcontact_approachesを削除
-                    supabase.table('contact_approaches').delete().eq('contact_id', contact_id).execute()
-                    
-                    # 関連するwork_locationsを削除
-                    supabase.table('work_locations').delete().eq('contact_id', contact_id).execute()
-                    
-                    # 最後にcontactsテーブルから削除
-                    response = supabase.table('contacts').delete().eq('contact_id', contact_id).execute()
-                    
-                    st.success(f"コンタクト「{selected_contact.get('full_name', 'N/A')}」が正常に削除されました")
+
+                    with st.spinner("削除処理中..."):
+                        # まず関連するproject_assignmentsを削除
+                        assignments_response = supabase.table('project_assignments').delete().eq('contact_id', contact_id).execute()
+                        deletion_steps.append(f"案件アサインメント: {len(assignments_response.data) if assignments_response.data else 0}件削除")
+
+                        # 関連するcontact_approachesを削除
+                        approaches_response = supabase.table('contact_approaches').delete().eq('contact_id', contact_id).execute()
+                        deletion_steps.append(f"アプローチ履歴: {len(approaches_response.data) if approaches_response.data else 0}件削除")
+
+                        # 関連するwork_locationsを削除
+                        locations_response = supabase.table('work_locations').delete().eq('contact_id', contact_id).execute()
+                        deletion_steps.append(f"勤務地情報: {len(locations_response.data) if locations_response.data else 0}件削除")
+
+                        # 最後にcontactsテーブルから削除
+                        response = supabase.table('contacts').delete().eq('contact_id', contact_id).execute()
+
+                        # 削除後、実際に削除されたか確認
+                        import time
+                        time.sleep(0.5)  # データベースの反映を待つ
+                        check_response = supabase.table('contacts').select('contact_id').eq('contact_id', contact_id).execute()
+
+                    if not check_response.data:  # データが存在しない = 削除成功
+                        # キャッシュをクリアして確実に最新データを取得
+                        st.cache_data.clear()
+
+                        # 削除結果の詳細表示
+                        st.success(f"✅ コンタクト「{selected_contact.get('full_name', 'N/A')}」が正常に削除されました")
+                        with st.expander("削除詳細"):
+                            for step in deletion_steps:
+                                st.text(f"• {step}")
+                    else:
+                        st.error("❌ 削除に失敗しました。データがまだ存在します。ページを再読み込みして再試行してください。")
+
+                    # セッション状態もクリア
+                    if 'selected_contact_id' in st.session_state:
+                        del st.session_state.selected_contact_id
+                    if 'selected_contact_id_from_list' in st.session_state:
+                        del st.session_state.selected_contact_id_from_list
+
                     st.rerun()
                     
                 except Exception as e:
@@ -5503,72 +5635,54 @@ def show_data_import():
     st.title("📥 データインポート")
     st.markdown("---")
     
-    # サンプルファイルダウンロードセクション
-    st.subheader("📋 サンプルCSVダウンロード")
-    st.markdown("適切な形式でデータをインポートするため、まずサンプルCSVファイルをダウンロードしてフォーマットを確認してください。")
     
-    col1, col2, col3 = st.columns(3)
+    # インポート設定
+    st.subheader("⚙️ 共通インポート設定")
     
-    with col1:
-        st.markdown("**🏢 企業データサンプル**")
-        company_sample = generate_company_sample_csv()
-        st.download_button(
-            label="📥 企業データサンプル.csv",
-            data=company_sample,
-            file_name="企業データサンプル.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-    
-    with col2:
-        st.markdown("**🎯 案件データサンプル**")
-        project_sample = generate_project_sample_csv()
-        st.download_button(
-            label="📥 案件データサンプル.csv",
-            data=project_sample,
-            file_name="案件データサンプル.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-    
-    with col3:
-        st.markdown("**👥 コンタクトデータサンプル**")
-        contact_sample = generate_contact_sample_csv()
-        st.download_button(
-            label="📥 コンタクトデータサンプル.csv",
-            data=contact_sample,
-            file_name="コンタクトデータサンプル.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-    
-    st.markdown("---")
-    
-    # 重複処理オプション
-    st.subheader("⚙️ インポート設定")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        duplicate_handling = st.radio(
-            "重複データ処理方法",
-            options=["重複を許可（すべて登録）", "重複をスキップ（新規のみ登録）", "重複を更新（既存データを更新）"],
-            index=0,
-            help="既存データと同じ情報がある場合の処理方法を選択してください"
-        )
-    
-    with col2:
-        st.markdown("**重複判定基準:**")
-        st.markdown("- 🏢 **企業**: 企業名")  
-        st.markdown("- 🎯 **案件**: 企業名 + 案件名")
-        st.markdown("- 👥 **コンタクト**: 企業名 + 氏名")
+    with st.container():
+        col1, col2 = st.columns([3, 2])
+        
+        with col1:
+            duplicate_handling = st.radio(
+                "📋 重複データ処理方法",
+                options=["重複をスキップ（新規のみ登録）", "重複を更新（既存データを更新）"],
+                index=0,
+                help="既存データと同じ情報がある場合の処理方法を選択してください"
+            )
+        
+        with col2:
+            st.info("""
+            **🔍 重複判定基準**
+            - 🏢 **企業**: 企業名
+            - 🎯 **案件**: 企業名 + 案件名
+            - 👥 **コンタクト**: 企業名 + 氏名 + email
+            - 🎯👥 **案件マッチング**: 企業名 + 氏名 + email
+            """)
     
     st.markdown("---")
     
     # タブ分け
-    tab1, tab2, tab3 = st.tabs(["🏢 企業データ", "🎯 案件データ", "👥 コンタクトデータ"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🏢 企業データ", "🎯 案件データ", "👥 コンタクトデータ", "🎯👥 案件マッチング"])
     
     with tab1:
         st.subheader("🏢 企業データインポート")
+        
+        # サンプルCSVダウンロード
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            company_sample = generate_company_sample_csv()
+            st.download_button(
+                label="📥 サンプルCSV",
+                data=company_sample,
+                file_name="企業データサンプル.csv",
+                mime="text/csv",
+                width="stretch",
+                type="secondary"
+            )
+        with col2:
+            st.info("💡 適切な形式でインポートするため、まずサンプルCSVをダウンロードしてフォーマットを確認してください。")
+        
+        st.markdown("---")
         
         # ファイルアップローダー
         uploaded_file = st.file_uploader(
@@ -5616,9 +5730,31 @@ def show_data_import():
                         st.warning("⚠️ データベース接続がありません。サンプルデータモードでは実際のインポートはできません。")
                         return
                         
-                    success_count = import_company_data(df, company_name_col, industry_col, target_dept_col, duplicate_handling)
+                    success_count, error_count, errors = import_company_data(df, company_name_col, industry_col, target_dept_col, duplicate_handling)
+                    
+                    # 結果サマリー表示
+                    st.markdown("### 📊 インポート結果")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if success_count > 0:
+                            st.success(f"✅ **成功: {success_count}件**\n企業データをインポートしました")
+                    
+                    with col2:
+                        if error_count > 0:
+                            st.error(f"❌ **エラー: {error_count}件**\n処理をスキップしました")
+                    
+                    # エラー詳細表示
+                    if error_count > 0 and errors:
+                        st.markdown("---")
+                        st.markdown("### 🔍 エラー詳細")
+                        with st.expander(f"エラー一覧 ({len(errors)}件)", expanded=len(errors) <= 5):
+                            for error in errors[:20]:
+                                st.write(f"📍 **行{error['row']}**: {error['message']}")
+                            if len(errors) > 20:
+                                st.write(f"... 他{len(errors)-20}件のエラー")
+                    
                     if success_count > 0:
-                        st.success(f"✅ {success_count}件の企業データをインポートしました")
                         st.cache_data.clear()
                         st.rerun()
                     
@@ -5627,6 +5763,23 @@ def show_data_import():
     
     with tab2:
         st.subheader("🎯 案件データインポート")
+        
+        # サンプルCSVダウンロード
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            project_sample = generate_project_sample_csv()
+            st.download_button(
+                label="📥 サンプルCSV",
+                data=project_sample,
+                file_name="案件データサンプル.csv",
+                mime="text/csv",
+                width="stretch",
+                type="secondary"
+            )
+        with col2:
+            st.info("💡 適切な形式でインポートするため、まずサンプルCSVをダウンロードしてフォーマットを確認してください。")
+        
+        st.markdown("---")
         
         # ファイルアップローダー
         uploaded_file = st.file_uploader(
@@ -5714,6 +5867,23 @@ def show_data_import():
     with tab3:
         st.subheader("👥 コンタクトデータインポート")
         
+        # サンプルCSVダウンロード
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            contact_sample = generate_contact_sample_csv()
+            st.download_button(
+                label="📥 サンプルCSV",
+                data=contact_sample,
+                file_name="コンタクトデータサンプル.csv",
+                mime="text/csv",
+                width="stretch",
+                type="secondary"
+            )
+        with col2:
+            st.info("💡 適切な形式でインポートするため、まずサンプルCSVをダウンロードしてフォーマットを確認してください。")
+        
+        st.markdown("---")
+        
         # ファイルアップローダー
         uploaded_file = st.file_uploader(
             "コンタクトデータCSVファイルを選択してください",
@@ -5738,13 +5908,13 @@ def show_data_import():
                 
                 with col1:
                     mapping_config['company_name'] = st.selectbox(
-                        "企業名カラム",
+                        "企業名カラム *",
                         options=df.columns.tolist(),
                         index=df.columns.tolist().index('企業名') if '企業名' in df.columns else 0,
                         key="contact_company"
                     )
                     mapping_config['full_name'] = st.selectbox(
-                        "氏名カラム",
+                        "氏名カラム *",
                         options=df.columns.tolist(),
                         index=df.columns.tolist().index('氏名') if '氏名' in df.columns else 0,
                         key="contact_name"
@@ -5764,10 +5934,11 @@ def show_data_import():
                 
                 with col2:
                     mapping_config['email'] = st.selectbox(
-                        "メールアドレスカラム",
-                        options=['選択しない'] + df.columns.tolist(),
-                        index=df.columns.tolist().index('メール') + 1 if 'メール' in df.columns else 0,
-                        key="contact_email"
+                        "メールアドレスカラム *",
+                        options=df.columns.tolist(),
+                        index=df.columns.tolist().index('メール') if 'メール' in df.columns else 0,
+                        key="contact_email",
+                        help="必須項目：連絡手段として必要です"
                     )
                     mapping_config['phone'] = st.selectbox(
                         "電話番号カラム",
@@ -5813,6 +5984,127 @@ def show_data_import():
                         st.success(f"✅ {success_count}件のコンタクトデータをインポートしました")
                         st.cache_data.clear()
                         st.rerun()
+                    
+            except Exception as e:
+                st.error(f"❌ ファイル読み込みエラー: {str(e)}")
+    
+    with tab4:
+        st.subheader("🎯👥 案件マッチングインポート")
+        
+        # サンプルCSVダウンロード
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            matching_sample = generate_matching_sample_csv()
+            st.download_button(
+                label="📥 サンプルCSV",
+                data=matching_sample,
+                file_name="案件マッチングサンプル.csv",
+                mime="text/csv",
+                width="stretch",
+                type="secondary"
+            )
+        with col2:
+            st.info("💡 適切な形式でインポートするため、まずサンプルCSVをダウンロードしてフォーマットを確認してください。")
+        
+        st.markdown("---")
+        
+        # ファイルアップローダー
+        uploaded_file = st.file_uploader(
+            "案件マッチングCSVファイルを選択してください",
+            type=['csv'],
+            key="matching_upload"
+        )
+        
+        if uploaded_file:
+            try:
+                # CSVを読み込み
+                df = pd.read_csv(uploaded_file, encoding='utf-8')
+                
+                # データプレビュー
+                st.write("**データプレビュー:**")
+                st.dataframe(df.head())
+                
+                # 必須カラムチェック
+                required_columns = [
+                    'last_name', 'first_name', 'company_name', 'email', 'profile', 'project_name'
+                ]
+                
+                missing_columns = [col for col in required_columns if col not in df.columns]
+                
+                if missing_columns:
+                    st.error(f"❌ 必須カラムが不足しています: {', '.join(missing_columns)}")
+                    st.info("💡 CSVファイルに上記の必須カラムを追加してください。")
+                else:
+                    st.success("✅ すべての必須カラムが揃っています")
+                    
+                    # データ検証
+                    st.write("**データ検証結果:**")
+                    
+                    # 空値チェック
+                    empty_check = df[required_columns].isnull().sum()
+                    if empty_check.sum() > 0:
+                        st.warning("⚠️ 以下のカラムに空値があります:")
+                        for col, count in empty_check[empty_check > 0].items():
+                            st.write(f"  - {col}: {count}行")
+                    
+                    # 案件存在チェック
+                    unique_projects = df['project_name'].unique()
+                    st.write(f"**📊 データ概要:**")
+                    st.write(f"- 候補者数: {len(df)}名")
+                    st.write(f"- 案件数: {len(unique_projects)}件")
+                    st.write(f"- 企業数: {len(df['company_name'].unique())}社")
+                    
+                    # インポートボタン
+                    if st.button("📥 案件マッチングデータをインポート", type="primary", key="import_matching"):
+                        if supabase is None:
+                            st.warning("⚠️ データベース接続がありません。サンプルデータモードでは実際のインポートはできません。")
+                        else:
+                            with st.spinner("インポート処理中..."):
+                                success_count, error_count, errors = import_matching_data(df, duplicate_handling)
+                                
+                                # 結果サマリー表示
+                                st.markdown("### 📊 インポート結果")
+                                
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    if success_count > 0:
+                                        st.success(f"✅ **成功: {success_count}件**\n候補者データをインポートし、案件に紐付けました")
+                                
+                                with col2:
+                                    if error_count > 0:
+                                        st.error(f"❌ **エラー: {error_count}件**\n処理をスキップしました")
+                                
+                                # エラー詳細の分類と表示
+                                if error_count > 0 and errors:
+                                    st.markdown("---")
+                                    st.markdown("### 🔍 エラー詳細")
+                                    
+                                    # エラーをタイプ別に分類
+                                    error_categories = {
+                                        '案件名エラー': [e for e in errors if '案件' in e['message'] and '見つかりません' in e['message']],
+                                        '必須項目エラー': [e for e in errors if '必須項目' in e['message']],
+                                        'システムエラー': [e for e in errors if '案件' not in e['message'] and '必須項目' not in e['message']]
+                                    }
+                                    
+                                    for category, category_errors in error_categories.items():
+                                        if category_errors:
+                                            with st.expander(f"{category} ({len(category_errors)}件)", expanded=len(category_errors) <= 5):
+                                                for error in category_errors[:20]:  # 最大20件まで表示
+                                                    st.write(f"📍 **行{error['row']}**: {error['message']}")
+                                                if len(category_errors) > 20:
+                                                    st.write(f"... 他{len(category_errors)-20}件のエラー")
+                                    
+                                    # 修正のヒント
+                                    st.markdown("---")
+                                    st.markdown("### 💡 修正のヒント")
+                                    if error_categories['案件名エラー']:
+                                        st.info("**案件名エラー**: 案件管理ページで該当する案件名が登録されているか確認してください")
+                                    if error_categories['必須項目エラー']:
+                                        st.info("**必須項目エラー**: 姓、名、企業名、メールアドレス、プロフィール、案件名がすべて入力されているか確認してください")
+                                
+                                if success_count > 0:
+                                    st.cache_data.clear()
+                                    st.rerun()
                     
             except Exception as e:
                 st.error(f"❌ ファイル読み込みエラー: {str(e)}")
@@ -5868,9 +6160,9 @@ def generate_contact_sample_csv():
     sample_data = {
         '企業名': ['株式会社サンプルIT', 'サンプル商事株式会社', '株式会社サンプル製造', '株式会社サンプルIT', 'サンプル商事株式会社'],
         '氏名': ['山田太郎', '佐藤花子', '田中次郎', '鈴木一郎', '高橋美咲'],
+        'メール': ['yamada@sample-it.co.jp', 'sato@sample-trade.com', 'tanaka@sample-mfg.co.jp', 'suzuki@sample-it.co.jp', 'takahashi@sample-trade.com'],  # 必須項目として3番目に配置
         '部署': ['システム開発部', '営業部', '生産管理部', 'インフラ部', 'マーケティング部'],
         '役職': ['部長', 'マネージャー', 'スペシャリスト', '課長', '主任'],
-        'メール': ['yamada@sample-it.co.jp', 'sato@sample-trade.com', 'tanaka@sample-mfg.co.jp', 'suzuki@sample-it.co.jp', 'takahashi@sample-trade.com'],
         '電話番号': ['03-1234-5678', '03-2345-6789', '045-3456-7890', '03-1234-5679', '03-2345-6780'],
         '年齢': [45, 38, 42, 35, 29],
         '優先度': ['高', '中', '高', '中', '低'],
@@ -5882,11 +6174,34 @@ def generate_contact_sample_csv():
     return df.to_csv(index=False, encoding='utf-8-sig')
 
 
+def generate_matching_sample_csv():
+    """案件マッチングサンプルCSVを生成"""
+    sample_data = {
+        # 必須項目
+        'last_name': ['田中', '佐藤', '鈴木', '高橋'],
+        'first_name': ['太郎', '花子', '一郎', '美咲'],
+        'company_name': ['株式会社ABC', 'XYZ株式会社', 'DEF株式会社', 'GHI株式会社'],
+        'email': ['tanaka@abc.co.jp', 'sato@xyz.com', 'suzuki@def.co.jp', 'takahashi@ghi.jp'],
+        'profile': [
+            'Python開発10年・AI/ML経験5年・10名規模のチームマネジメント経験',
+            'Java開発8年・マイクロサービス設計経験・AWS認定保持',
+            '営業15年・新規開拓実績多数・IT業界知識豊富',
+            'UI/UX設計5年・フロントエンド開発・デザインツール習熟'
+        ],
+        'project_name': ['新規AI開発プロジェクト', 'ECサイト刷新プロジェクト', '営業強化プロジェクト', 'UI/UX改善プロジェクト']
+    }
+    
+    df = pd.DataFrame(sample_data)
+    return df.to_csv(index=False, encoding='utf-8-sig')
+
+
 def import_company_data(df, company_name_col, industry_col, target_dept_col, duplicate_handling):
     """企業データをデータベースにインポート"""
     success_count = 0
     skip_count = 0
     update_count = 0
+    error_count = 0
+    errors = []
     
     try:
         for _, row in df.iterrows():
@@ -5927,7 +6242,6 @@ def import_company_data(df, company_name_col, industry_col, target_dept_col, dup
                     supabase.table('target_companies').update(update_data).eq('target_company_id', target_company_id).execute()
                     update_count += 1
                     continue
-                # else: 重複を許可（すべて登録）の場合は通常通り処理
             
             # 企業データ作成
             company_data = {
@@ -5982,11 +6296,12 @@ def import_company_data(df, company_name_col, industry_col, target_dept_col, dup
                 result_message += f", 更新 {update_count}件"
             st.info(result_message)
         
-        return success_count + update_count  # 処理された件数として返す
+        return success_count + update_count, error_count, errors  # 処理された件数とエラー情報を返す
         
     except Exception as e:
-        st.error(f"❌ インポート中にエラーが発生しました: {str(e)}")
-        return success_count
+        errors.append({'row': 'システム', 'message': f"インポート中にエラーが発生しました: {str(e)}"})
+        error_count += 1
+        return success_count, error_count, errors
 
 
 def import_project_data(df, mapping_config, duplicate_handling):
@@ -6027,7 +6342,7 @@ def import_project_data(df, mapping_config, duplicate_handling):
                     # 既存データを更新
                     project_id = existing_project.data[0]['project_id']
                     update_data = {
-                        'status': str(row[mapping_config['status']]).strip(),
+                        'project_status': str(row[mapping_config['status']]).strip(),
                         'updated_at': datetime.now().isoformat()
                     }
                     
@@ -6067,13 +6382,12 @@ def import_project_data(df, mapping_config, duplicate_handling):
                     supabase.table('projects').update(update_data).eq('project_id', project_id).execute()
                     update_count += 1
                     continue
-                # else: 重複を許可（すべて登録）の場合は通常通り処理
             
             # 案件データ作成
             project_data = {
                 'target_company_id': target_company_id,
                 'project_name': project_name,
-                'status': str(row[mapping_config['status']]).strip(),
+                'project_status': str(row[mapping_config['status']]).strip(),
                 'created_at': datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat()
             }
@@ -6144,11 +6458,13 @@ def import_contact_data(df, mapping_config, duplicate_handling):
         for _, row in df.iterrows():
             company_name = str(row[mapping_config['company_name']]).strip()
             full_name = str(row[mapping_config['full_name']]).strip()
+            email = str(row[mapping_config['email']]).strip()
             
-            # 空の行をスキップ
-            if not company_name or not full_name or \
+            # 必須項目のバリデーション（企業名、氏名、メールアドレス）
+            if not company_name or not full_name or not email or \
                company_name.lower() in ['nan', 'null', ''] or \
-               full_name.lower() in ['nan', 'null', '']:
+               full_name.lower() in ['nan', 'null', ''] or \
+               email.lower() in ['nan', 'null', '']:
                 continue
             
             # 企業IDを取得
@@ -6160,8 +6476,9 @@ def import_contact_data(df, mapping_config, duplicate_handling):
             
             target_company_id = company_response.data[0]['target_company_id']
             
-            # 重複チェック（企業名 + 氏名で判定）
-            existing_contact = supabase.table('contacts').select('contact_id').eq('target_company_id', target_company_id).eq('full_name', full_name).execute()
+            # 重複チェック（氏名 + メールアドレス + 企業名で判定）
+            # より精密な個人特定のため、3つの要素で判定
+            existing_contact = supabase.table('contacts').select('contact_id').eq('target_company_id', target_company_id).eq('full_name', full_name).eq('email_trial_history', email).execute()
             
             if existing_contact.data:
                 # 重複データが存在する場合
@@ -6172,6 +6489,9 @@ def import_contact_data(df, mapping_config, duplicate_handling):
                     # 既存データを更新
                     contact_id = existing_contact.data[0]['contact_id']
                     update_data = {'updated_at': datetime.now().isoformat()}
+                    
+                    # メールアドレスを追加（email_trial_historyフィールドを使用）
+                    update_data['email_trial_history'] = email
                     
                     # オプションフィールドを追加
                     optional_fields = {
@@ -6207,12 +6527,12 @@ def import_contact_data(df, mapping_config, duplicate_handling):
                     supabase.table('contacts').update(update_data).eq('contact_id', contact_id).execute()
                     update_count += 1
                     continue
-                # else: 重複を許可（すべて登録）の場合は通常通り処理
             
             # コンタクトデータ作成
             contact_data = {
                 'target_company_id': target_company_id,
                 'full_name': full_name,
+                'email_trial_history': email,  # メールアドレスをemail_trial_historyフィールドに保存
                 'created_at': datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat()
             }
@@ -6268,6 +6588,175 @@ def import_contact_data(df, mapping_config, duplicate_handling):
     except Exception as e:
         st.error(f"❌ インポート中にエラーが発生しました: {str(e)}")
         return success_count
+
+
+def import_matching_data(df, duplicate_handling):
+    """案件マッチングデータをインポート"""
+    success_count = 0
+    error_count = 0
+    errors = []
+    
+    try:
+        for idx, row in df.iterrows():
+            try:
+                # 必須項目の取得
+                last_name = str(row['last_name']).strip()
+                first_name = str(row['first_name']).strip()
+                company_name = str(row['company_name']).strip()
+                email = str(row['email']).strip()
+                profile = str(row['profile']).strip()
+                project_name = str(row['project_name']).strip()
+                screening_comment = str(row['screening_comment']).strip()
+                
+                # 任意項目の取得
+                position_name = str(row.get('position_name', '')).strip()
+                age_or_birth = str(row.get('age_or_birth', '')).strip()
+                screening_status = str(row.get('screening_status', '未評価')).strip()
+                assignment_status = str(row.get('assignment_status', '検討中')).strip()
+                
+                # 空値チェック（必須項目のみ）
+                if not all([last_name, first_name, company_name, email, profile, project_name]):
+                    errors.append({
+                        'row': idx + 2,  # ヘッダー行を考慮
+                        'message': '必須項目（姓、名、企業名、メールアドレス、プロフィール、案件名）が不足しています'
+                    })
+                    error_count += 1
+                    continue
+                
+                # 1. 案件の存在確認
+                project_response = supabase.table('projects').select('project_id').eq('project_name', project_name).execute()
+                if not project_response.data:
+                    errors.append({
+                        'row': idx + 2,
+                        'message': f'案件「{project_name}」が見つかりません'
+                    })
+                    error_count += 1
+                    continue
+                project_id = project_response.data[0]['project_id']
+                
+                # 2. 企業の確認/登録
+                company_response = supabase.table('companies').select('company_id').eq('company_name', company_name).execute()
+                if company_response.data:
+                    company_id = company_response.data[0]['company_id']
+                else:
+                    # 新規企業登録
+                    new_company = supabase.table('companies').insert({
+                        'company_name': company_name,
+                        'created_at': datetime.now().isoformat(),
+                        'updated_at': datetime.now().isoformat()
+                    }).execute()
+                    company_id = new_company.data[0]['company_id']
+                
+                # 3. 候補者の確認/登録
+                full_name = f"{last_name}{first_name}"
+                
+                # 重複チェック（氏名 + メールアドレス + 企業名で判定）
+                # より精密な個人特定のため、3つの要素で判定
+                contact_response = supabase.table('contacts').select('contact_id').eq('company_id', company_id).eq('full_name', full_name).eq('email_trial_history', email).execute()
+                
+                # 転職ケースの確認：同じ氏名+メールアドレスで異なる企業に存在するかチェック
+                same_person_different_company = supabase.table('contacts').select('contact_id, company_id').eq('full_name', full_name).eq('email_trial_history', email).neq('company_id', company_id).execute()
+                if same_person_different_company.data:
+                    # 同一人物の転職と判断される場合の処理（ログとして記録）
+                    st.info(f"💼 {full_name}さん（{email}）の転職を検出しました。新しい企業での登録として処理します。")
+                
+                if contact_response.data:
+                    contact_id = contact_response.data[0]['contact_id']
+                    
+                    # 重複処理
+                    if duplicate_handling == "重複をスキップ（新規のみ登録）":
+                        # 既に案件に紐付いているかチェック
+                        assignment_check = supabase.table('project_assignments').select('assignment_id').eq('project_id', project_id).eq('contact_id', contact_id).execute()
+                        if assignment_check.data:
+                            continue  # スキップ
+                    elif duplicate_handling == "重複を更新（既存データを更新）":
+                        # 候補者情報を更新
+                        update_data = {
+                            'position_name': position_name,
+                            'profile': profile,
+                            'email_trial_history': email,  # emailをemail_trial_historyフィールドに保存
+                            'updated_at': datetime.now().isoformat()
+                        }
+                        
+                        # 年齢/生年月日の処理
+                        if age_or_birth:
+                            if '-' in age_or_birth:  # 生年月日形式
+                                update_data['birth_date'] = age_or_birth
+                                # 実年齢を計算
+                                birth_date = datetime.strptime(age_or_birth, '%Y-%m-%d').date()
+                                today = date.today()
+                                actual_age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+                                update_data['actual_age'] = actual_age
+                            else:  # 年齢形式
+                                update_data['estimated_age'] = age_or_birth
+                        
+                        supabase.table('contacts').update(update_data).eq('contact_id', contact_id).execute()
+                else:
+                    # 新規候補者登録
+                    contact_data = {
+                        'company_id': company_id,
+                        'full_name': full_name,
+                        'last_name': last_name,
+                        'first_name': first_name,
+                        'position_name': position_name,
+                        'profile': profile,
+                        'email_trial_history': email,  # emailをemail_trial_historyフィールドに保存
+                        'screening_status': screening_status,
+                        'primary_screening_comment': screening_comment,
+                        'created_at': datetime.now().isoformat(),
+                        'updated_at': datetime.now().isoformat()
+                    }
+                    
+                    # 年齢/生年月日の処理
+                    if age_or_birth:
+                        if '-' in age_or_birth:  # 生年月日形式
+                            contact_data['birth_date'] = age_or_birth
+                            # 実年齢を計算
+                            birth_date = datetime.strptime(age_or_birth, '%Y-%m-%d').date()
+                            today = date.today()
+                            actual_age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+                            contact_data['actual_age'] = actual_age
+                        else:  # 年齢形式
+                            contact_data['estimated_age'] = age_or_birth
+                    
+                    new_contact = supabase.table('contacts').insert(contact_data).execute()
+                    contact_id = new_contact.data[0]['contact_id']
+                
+                # 4. 案件との紐付け（project_assignments）
+                # 既存の紐付けチェック
+                assignment_check = supabase.table('project_assignments').select('assignment_id').eq('project_id', project_id).eq('contact_id', contact_id).execute()
+                
+                if assignment_check.data:
+                    # 既存の紐付けを更新
+                    if duplicate_handling == "重複を更新（既存データを更新）":
+                        supabase.table('project_assignments').update({
+                            'assignment_status': assignment_status,
+                            'updated_at': datetime.now().isoformat()
+                        }).eq('assignment_id', assignment_check.data[0]['assignment_id']).execute()
+                else:
+                    # 新規紐付け
+                    supabase.table('project_assignments').insert({
+                        'project_id': project_id,
+                        'contact_id': contact_id,
+                        'assignment_status': assignment_status,
+                        'created_at': datetime.now().isoformat(),
+                        'updated_at': datetime.now().isoformat()
+                    }).execute()
+                
+                success_count += 1
+                
+            except Exception as e:
+                errors.append({
+                    'row': idx + 2,
+                    'message': str(e)
+                })
+                error_count += 1
+                continue
+    
+    except Exception as e:
+        st.error(f"インポート処理中にエラーが発生しました: {str(e)}")
+    
+    return success_count, error_count, errors
 
 # =============================================================================
 # 新しいDB機能（検索管理系）
@@ -6331,7 +6820,7 @@ def show_search_progress():
             progress_data.append(company_progress)
         
         progress_df = pd.DataFrame(progress_data)
-        st.dataframe(progress_df, use_container_width=True)
+        st.dataframe(progress_df, width="stretch")
         
     except Exception as e:
         st.error(f"データ取得エラー: {str(e)}")
@@ -6870,9 +7359,9 @@ def show_company_management():
             available_columns = [col for col in display_columns if col in df.columns]
             
             if available_columns:
-                st.dataframe(df[available_columns], use_container_width=True)
+                st.dataframe(df[available_columns], width="stretch")
             else:
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df, width="stretch")
         else:
             st.info("企業データがありません")
     
@@ -7207,14 +7696,28 @@ def show_project_assignments(project_id, project_name):
 
 def update_assignment_status(assignment_id, new_status):
     """アサインメントのステータスを更新"""
-    try:
-        supabase.table('project_assignments').update({
-            'assignment_status': new_status
-        }).eq('assignment_id', assignment_id).execute()
-        st.success(f"✅ ステータスを「{new_status}」に更新しました")
-        st.rerun()
-    except Exception as e:
-        st.error(f"❌ 更新に失敗しました: {str(e)}")
+    import time
+    max_retries = 3
+
+    for attempt in range(max_retries):
+        try:
+            supabase.table('project_assignments').update({
+                'assignment_status': new_status
+            }).eq('assignment_id', assignment_id).execute()
+            st.success(f"✅ ステータスを「{new_status}」に更新しました")
+            # rerunの前に少し待機してデータベース更新の完了を待つ
+            time.sleep(0.5)
+            st.rerun()
+            return
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(1)  # 1秒待ってリトライ
+                continue
+            else:
+                error_msg = f"❌ 更新に失敗しました: {str(e)}"
+                if "Server disconnected" in str(e):
+                    error_msg += " - データベース接続が切断されました。ページを再読み込みして再試行してください。"
+                st.error(error_msg)
 
 
 def delete_assignment(assignment_id, contact_name):
@@ -7532,6 +8035,859 @@ def show_contact_project_assignments_summary(contact_id):
         
     except Exception as e:
         st.warning(f"紐付け案件取得エラー: {str(e)}")
+
+
+def check_data_size_and_warn(table_name, record_count):
+    """データサイズを事前チェックして警告"""
+    if record_count > 50000:
+        st.error(f"⚠️ **大量データ警告**: {record_count:,}件のデータがあります。処理に数分かかり、メモリ不足の可能性があります。")
+        st.markdown("**推奨**: より具体的な条件でデータを絞り込んでからエクスポートしてください。")
+        return st.checkbox("⚡ 大量データでも続行する（リスクを承知）", key=f"large_data_warning_{table_name}")
+    elif record_count > 10000:
+        st.warning(f"📊 **中規模データ**: {record_count:,}件のデータです。処理に1-2分かかる場合があります。")
+        return st.checkbox("✅ 処理を続行する", value=True, key=f"medium_data_continue_{table_name}")
+    elif record_count > 1000:
+        st.info(f"📈 **{record_count:,}件**のデータをエクスポートします。")
+        return True
+    else:
+        st.success(f"✅ **{record_count:,}件**のデータをエクスポートします。")
+        return True
+
+
+def show_data_export():
+    """データエクスポート機能"""
+    st.subheader("📤 データエクスポート")
+    st.markdown("データベースからデータをCSVファイルでエクスポートできます。")
+    
+    if supabase is None:
+        st.warning("⚠️ データベース接続がありません。サンプルデータモードではエクスポート機能は利用できません。")
+        return
+    
+    # エクスポートオプション
+    st.markdown("### 📋 エクスポート対象選択")
+    
+    export_options = {
+        "案件別候補者リスト": "project_candidates",
+        "企業別コンタクトリスト": "company_contacts", 
+        "全データバックアップ": "full_backup"
+    }
+    
+    selected_export = st.selectbox("エクスポート種類を選択", list(export_options.keys()))
+    export_type = export_options[selected_export]
+    
+    st.markdown("---")
+    
+    if export_type == "project_candidates":
+        show_project_candidates_export()
+    elif export_type == "company_contacts":
+        show_company_contacts_export()
+    elif export_type == "full_backup":
+        show_full_backup_export()
+
+
+def show_project_candidates_export():
+    """案件別候補者リストエクスポート"""
+    st.markdown("### 🎯 案件別候補者リスト")
+    st.markdown("特定案件にマッチングされた候補者の一覧をエクスポートします。")
+
+    try:
+        # 案件一覧を取得（正しいリレーションシップを使用）
+        projects_response = supabase.table('projects').select('project_id, project_name, client_companies(company_name)').execute()
+
+        if not projects_response.data:
+            st.warning("案件データが見つかりません。")
+            return
+
+        # 案件選択（安全なデータアクセス）
+        project_options = {}
+        for p in projects_response.data:
+            if p and p.get('project_name'):
+                client_company = p.get('client_companies') if p else None
+                company_name = client_company.get('company_name', '企業名不明') if client_company else '企業名不明'
+                project_key = f"{p['project_name']} ({company_name})"
+                project_options[project_key] = p['project_id']
+
+        if not project_options:
+            st.warning("有効な案件データが見つかりません。")
+            return
+
+        # 「すべてをエクスポート」オプションを追加
+        export_all_key = "📊 すべての案件をエクスポート"
+        project_options[export_all_key] = "ALL"
+
+        selected_project_name = st.selectbox("案件を選択", [export_all_key] + [k for k in project_options.keys() if k != export_all_key])
+        selected_project_id = project_options[selected_project_name]
+        
+        # データサイズ事前チェック
+        st.markdown("---")
+        try:
+            # すべての案件を選択した場合
+            if selected_project_id == "ALL":
+                # すべての案件の候補者数をカウント
+                try:
+                    count_response = supabase.table('project_assignments').select('assignment_id', count='exact').execute()
+                    candidate_count = count_response.count if hasattr(count_response, 'count') else len(count_response.data) if count_response.data else 0
+                except Exception:
+                    # カウント機能が利用できない場合は、データを取得してカウント
+                    fallback_response = supabase.table('project_assignments').select('assignment_id').execute()
+                    candidate_count = len(fallback_response.data) if fallback_response.data else 0
+
+                # データサイズ警告とユーザー確認
+                if check_data_size_and_warn("all_projects", candidate_count):
+                    if UIComponents.primary_button("📥 全案件の候補者リストをダウンロード"):
+                        # プログレスバーの設定
+                        progress_text = st.empty()
+                        progress_bar = st.progress(0)
+
+                        try:
+                            progress_text.text("全案件のデータを準備中... (1/3)")
+                            progress_bar.progress(0.2)
+
+                            # すべての案件の候補者CSVを生成
+                            csv_data = generate_all_project_candidates_csv_with_progress(progress_bar, progress_text)
+
+                            if csv_data:
+                                progress_text.text("ファイルを準備中... (3/3)")
+                                progress_bar.progress(0.9)
+
+                                # ファイル名生成（日時付き）
+                                from datetime import datetime
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                filename = f"全案件候補者リスト_{timestamp}.csv"
+
+                                progress_bar.progress(1.0)
+                                progress_text.text("✅ 完了！")
+
+                                st.download_button(
+                                    label="💾 CSVファイルをダウンロード",
+                                    data=csv_data,
+                                    file_name=filename,
+                                    mime="text/csv"
+                                )
+                                st.success("✅ 全案件のCSVファイルの準備が完了しました！")
+                            else:
+                                st.warning("該当する候補者データが見つかりませんでした。")
+
+                        except Exception as e:
+                            progress_text.text("❌ エラーが発生しました")
+                            progress_bar.progress(0)
+                            st.error(f"エラー: {str(e)}")
+            else:
+                # 特定の案件を選択した場合（既存の処理）
+                # 候補者数をカウント
+                try:
+                    count_response = supabase.table('project_assignments').select('assignment_id', count='exact').eq('project_id', selected_project_id).execute()
+                    candidate_count = count_response.count if hasattr(count_response, 'count') else len(count_response.data) if count_response.data else 0
+                except Exception:
+                    # カウント機能が利用できない場合は、データを取得してカウント
+                    fallback_response = supabase.table('project_assignments').select('assignment_id').eq('project_id', selected_project_id).execute()
+                    candidate_count = len(fallback_response.data) if fallback_response.data else 0
+
+                # データサイズ警告とユーザー確認
+                if check_data_size_and_warn(f"project_{selected_project_id}", candidate_count):
+                    if UIComponents.primary_button("📥 候補者リストをダウンロード"):
+                        # プログレスバーの設定
+                        progress_text = st.empty()
+                        progress_bar = st.progress(0)
+
+                        try:
+                            progress_text.text("データを準備中... (1/3)")
+                            progress_bar.progress(0.2)
+
+                            csv_data = generate_project_candidates_csv_with_progress(selected_project_id, progress_bar, progress_text)
+
+                            if csv_data:
+                                progress_text.text("ファイルを準備中... (3/3)")
+                                progress_bar.progress(0.9)
+
+                                # ファイル名生成（日時付き）
+                                from datetime import datetime
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                project_name_clean = selected_project_name.split(' (')[0].replace('/', '_')
+                                filename = f"候補者リスト_{project_name_clean}_{timestamp}.csv"
+                                progress_bar.progress(1.0)
+                                progress_text.text("✅ 完了！")
+
+                                st.download_button(
+                                    label="💾 CSVファイルをダウンロード",
+                                    data=csv_data,
+                                    file_name=filename,
+                                    mime="text/csv"
+                                )
+                                st.success("✅ CSVファイルの準備が完了しました！")
+                            else:
+                                st.warning("該当する候補者データが見つかりませんでした。")
+
+                        except Exception as e:
+                            progress_text.text("❌ エラーが発生しました")
+                            progress_bar.progress(0)
+                            st.error(f"エラー: {str(e)}")
+                        
+        except Exception as e:
+            st.error(f"データサイズ確認エラー: {str(e)}")
+                    
+    except Exception as e:
+        st.error(f"❌ エラーが発生しました: {str(e)}")
+
+
+def show_company_contacts_export():
+    """企業別コンタクトリストエクスポート"""
+    st.markdown("### 🏢 企業別コンタクトリスト")
+    st.markdown("企業ごとのコンタクト情報一覧をエクスポートします。全企業または特定企業を選択できます。")
+    
+    try:
+        # 企業一覧を取得（target_companiesテーブルを使用）
+        companies_response = supabase.table('target_companies').select('target_company_id, company_name').execute()
+        
+        if not companies_response.data:
+            st.warning("企業データが見つかりません。")
+            return
+        
+        # 企業選択（安全なデータアクセス）
+        company_options = {}
+        for c in companies_response.data:
+            if c and c.get('company_name') and c.get('target_company_id'):
+                company_options[c['company_name']] = c['target_company_id']
+        
+        if not company_options:
+            st.warning("有効な企業データが見つかりません。")
+            return
+            
+        # 「すべての企業」オプションを追加
+        all_companies_option = "🌐 すべての企業"
+        company_list = [all_companies_option] + list(company_options.keys())
+
+        selected_company_name = st.selectbox("企業を選択", company_list)
+
+        # 選択に応じてIDを設定
+        if selected_company_name == all_companies_option:
+            selected_company_id = None  # Noneは全企業を意味する
+        else:
+            selected_company_id = company_options[selected_company_name]
+
+        # データサイズ事前チェック
+        st.markdown("---")
+
+        # 全企業選択時の警告
+        if selected_company_id is None:
+            st.info("💡 全企業のコンタクトデータをエクスポートします。データ量が多い場合、処理に時間がかかることがあります。")
+        try:
+            # コンタクト数をカウント
+            try:
+                if selected_company_id is None:
+                    # 全企業の場合
+                    count_response = supabase.table('contacts').select('contact_id', count='exact').execute()
+                else:
+                    # 特定企業の場合
+                    count_response = supabase.table('contacts').select('contact_id', count='exact').eq('target_company_id', selected_company_id).execute()
+                contact_count = count_response.count if hasattr(count_response, 'count') else len(count_response.data) if count_response.data else 0
+            except Exception:
+                # カウント機能が利用できない場合は、データを取得してカウント
+                if selected_company_id is None:
+                    fallback_response = supabase.table('contacts').select('contact_id').execute()
+                else:
+                    fallback_response = supabase.table('contacts').select('contact_id').eq('target_company_id', selected_company_id).execute()
+                contact_count = len(fallback_response.data) if fallback_response.data else 0
+            
+            # データサイズ警告とユーザー確認
+            export_id = "all_companies" if selected_company_id is None else f"company_{selected_company_id}"
+            if check_data_size_and_warn(export_id, contact_count):
+                if st.button("📥 コンタクトリストをダウンロード", type="primary"):
+                    # プログレスバーの設定
+                    progress_text = st.empty()
+                    progress_bar = st.progress(0)
+                    
+                    try:
+                        progress_text.text("データを準備中... (1/3)")
+                        progress_bar.progress(0.2)
+                        
+                        csv_data = generate_company_contacts_csv_with_progress(selected_company_id, progress_bar, progress_text)
+                        
+                        if csv_data:
+                            progress_text.text("ファイルを準備中... (3/3)")
+                            progress_bar.progress(0.9)
+                            
+                            from datetime import datetime
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            if selected_company_id is None:
+                                filename = f"コンタクトリスト_全企業_{timestamp}.csv"
+                            else:
+                                company_name_clean = selected_company_name.replace('/', '_')
+                                filename = f"コンタクトリスト_{company_name_clean}_{timestamp}.csv"
+                            
+                            progress_bar.progress(1.0)
+                            progress_text.text("✅ 完了！")
+                            
+                            st.download_button(
+                                label="💾 CSVファイルをダウンロード",
+                                data=csv_data,
+                                file_name=filename,
+                                mime="text/csv"
+                            )
+                            st.success("✅ CSVファイルの準備が完了しました！")
+                        else:
+                            st.warning("該当するコンタクトデータが見つかりませんでした。")
+                            
+                    except Exception as e:
+                        progress_text.text("❌ エラーが発生しました")
+                        progress_bar.progress(0)
+                        st.error(f"エラー: {str(e)}")
+                        
+        except Exception as e:
+            st.error(f"データサイズ確認エラー: {str(e)}")
+                    
+    except Exception as e:
+        st.error(f"❌ エラーが発生しました: {str(e)}")
+
+
+def show_full_backup_export():
+    """全データバックアップエクスポート"""
+    st.markdown("### 💾 全データバックアップ")
+    st.markdown("データベースの全テーブルデータをエクスポートします。")
+    
+    backup_tables = {
+        "コンタクト（候補者）": "contacts",
+        "案件": "projects", 
+        "対象企業": "target_companies",
+        "クライアント企業": "client_companies",
+        "案件マッチング": "project_assignments"
+    }
+    
+    selected_tables = st.multiselect(
+        "バックアップするテーブルを選択",
+        list(backup_tables.keys()),
+        default=list(backup_tables.keys())
+    )
+    
+    # データサイズ事前チェック
+    st.markdown("---")
+    if selected_tables:
+        try:
+            total_count = 0
+            for table_name in selected_tables:
+                table_key = backup_tables[table_name]
+                try:
+                    count_response = supabase.table(table_key).select('*', count='exact').limit(1).execute()
+                    table_count = count_response.count if hasattr(count_response, 'count') else 0
+                except Exception:
+                    # カウント機能が利用できない場合は、制限された数を取得してカウント
+                    try:
+                        fallback_response = supabase.table(table_key).select('*').limit(1000).execute()
+                        table_count = len(fallback_response.data) if fallback_response.data else 0
+                        if len(fallback_response.data) >= 1000:
+                            table_count = f"{table_count}+"  # 1000件以上の可能性を示す
+                    except Exception:
+                        table_count = "不明"
+                
+                total_count += table_count if isinstance(table_count, int) else 0
+                st.info(f"**{table_name}**: {table_count}件" if isinstance(table_count, int) else f"**{table_name}**: {table_count}件")
+            
+            st.markdown(f"**合計: {total_count:,}件**")
+            
+            # データサイズ警告とユーザー確認
+            if check_data_size_and_warn("backup_all_tables", total_count):
+                if st.button("📥 バックアップデータをダウンロード", type="primary"):
+                    if not selected_tables:
+                        st.warning("バックアップするテーブルを選択してください。")
+                        return
+                    
+                    # プログレスバーの設定
+                    progress_text = st.empty()
+                    progress_bar = st.progress(0)
+                    
+                    try:
+                        progress_text.text("バックアップを開始中... (1/4)")
+                        progress_bar.progress(0.1)
+                        
+                        csv_data = generate_full_backup_csv_with_progress(selected_tables, backup_tables, progress_bar, progress_text)
+                        
+                        if csv_data:
+                            progress_text.text("ファイルを準備中... (4/4)")
+                            progress_bar.progress(0.9)
+                            
+                            from datetime import datetime
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename = f"データバックアップ_{timestamp}.csv"
+                            
+                            progress_bar.progress(1.0)
+                            progress_text.text("✅ 完了！")
+                            
+                            st.download_button(
+                                label="💾 CSVファイルをダウンロード",
+                                data=csv_data,
+                                file_name=filename,
+                                mime="text/csv"
+                            )
+                            st.success("✅ バックアップファイルの準備が完了しました！")
+                        else:
+                            st.warning("バックアップデータが見つかりませんでした。")
+                            
+                    except Exception as e:
+                        progress_text.text("❌ エラーが発生しました")
+                        progress_bar.progress(0)
+                        st.error(f"エラー: {str(e)}")
+                        
+        except Exception as e:
+            st.error(f"データサイズ確認エラー: {str(e)}")
+
+
+def generate_project_candidates_csv_with_progress(project_id, progress_bar, progress_text):
+    """プログレスバー付き案件別候補者データのCSV生成"""
+    try:
+        if progress_text:
+            progress_text.text("データベースからデータを取得中... (2/3)")
+        if progress_bar:
+            progress_bar.progress(0.4)
+        
+        # ページング機能付きでデータを取得
+        page_size = 1000
+        offset = 0
+        all_data = []
+        
+        while True:
+            query = """
+                assignment_id,
+                assignment_status,
+                created_at,
+                contacts(
+                    full_name,
+                    last_name,
+                    first_name,
+                    email_trial_history,
+                    position_name,
+                    profile,
+                    screening_status,
+                    estimated_age,
+                    actual_age,
+                    target_companies!contacts_target_company_id_fkey(company_name)
+                ),
+                projects(
+                    project_name,
+                    client_companies(company_name)
+                )
+            """
+            
+            response = supabase.table('project_assignments')\
+                .select(query)\
+                .eq('project_id', project_id)\
+                .range(offset, offset + page_size - 1)\
+                .execute()
+            
+            if not response.data:
+                break
+                
+            all_data.extend(response.data)
+            offset += page_size
+            
+            # プログレス更新
+            if progress_bar:
+                progress_value = min(0.8, 0.4 + (len(all_data) / max(1, len(all_data) + 100)) * 0.4)
+                progress_bar.progress(progress_value)
+        
+        if not all_data:
+            return None
+        
+        if progress_text:
+            progress_text.text("CSVファイルを生成中... (2/3)")
+        if progress_bar:
+            progress_bar.progress(0.7)
+        
+        # CSV用データ整形
+        csv_rows = []
+        headers = [
+            '候補者氏名', '姓', '名', 'メールアドレス', '企業名', '役職',
+            'プロフィール', '年齢', 'スクリーニング状況', 'アサイン状況',
+            '案件名', '登録日'
+        ]
+        csv_rows.append(headers)
+        
+        for i, row in enumerate(all_data):
+            # プログレス更新（処理の重い部分）
+            if i % 100 == 0 and progress_bar:
+                progress_value = min(0.85, 0.7 + (i / len(all_data)) * 0.15)
+                progress_bar.progress(progress_value)
+            
+            # 安全なデータ取得（Noneチェック）
+            contact = row.get('contacts') if row else None
+            contact = contact if contact is not None else {}
+            
+            company = contact.get('target_companies') if contact else None
+            company = company if company is not None else {}
+            
+            project = row.get('projects') if row else None
+            project = project if project is not None else {}
+            
+            project_company = project.get('client_companies') if project else None
+            project_company = project_company if project_company is not None else {}
+            
+            csv_row = [
+                contact.get('full_name', '') if contact else '',
+                contact.get('last_name', '') if contact else '',
+                contact.get('first_name', '') if contact else '',
+                contact.get('email_trial_history', '') if contact else '',
+                company.get('company_name', '') if company else '',
+                contact.get('position_name', '') if contact else '',
+                contact.get('profile', '') if contact else '',
+                contact.get('estimated_age', '') or contact.get('actual_age', '') if contact else '',
+                contact.get('screening_status', '') if contact else '',
+                row.get('assignment_status', '') if row else '',
+                project.get('project_name', '') if project else '',
+                row.get('created_at', '')[:10] if row and row.get('created_at') else ''
+            ]
+            csv_rows.append(csv_row)
+        
+        if progress_bar:
+            progress_bar.progress(0.85)
+        
+        # CSV文字列生成（Windows対応のUTF-8 BOM付き）
+        import io
+        output = io.StringIO()
+        import csv
+        writer = csv.writer(output)
+        writer.writerows(csv_rows)
+        
+        # UTF-8 BOM付きで返す
+        return '\ufeff' + output.getvalue()
+        
+    except Exception as e:
+        st.error(f"CSV生成エラー: {str(e)}")
+        return None
+
+
+def generate_all_project_candidates_csv_with_progress(progress_bar, progress_text):
+    """プログレスバー付きすべての案件の候補者データのCSV生成"""
+    try:
+        if progress_text:
+            progress_text.text("全案件のデータベースからデータを取得中... (2/3)")
+        if progress_bar:
+            progress_bar.progress(0.4)
+
+        # ページング機能付きでデータを取得（project_idの制限なし）
+        page_size = 1000
+        offset = 0
+        all_data = []
+
+        while True:
+            query = """
+                assignment_id,
+                assignment_status,
+                created_at,
+                contacts(
+                    full_name,
+                    last_name,
+                    first_name,
+                    email_trial_history,
+                    position_name,
+                    profile,
+                    screening_status,
+                    estimated_age,
+                    actual_age,
+                    target_companies!contacts_target_company_id_fkey(company_name)
+                ),
+                projects(
+                    project_name,
+                    client_companies(company_name)
+                )
+            """
+
+            response = supabase.table('project_assignments')\
+                .select(query)\
+                .range(offset, offset + page_size - 1)\
+                .execute()
+
+            if not response.data:
+                break
+
+            all_data.extend(response.data)
+            offset += page_size
+
+            # プログレス更新
+            if progress_bar:
+                progress_value = min(0.8, 0.4 + (len(all_data) / max(1, len(all_data) + 100)) * 0.4)
+                progress_bar.progress(progress_value)
+
+        if not all_data:
+            return None
+
+        if progress_text:
+            progress_text.text("全案件CSVファイルを生成中... (2/3)")
+        if progress_bar:
+            progress_bar.progress(0.7)
+
+        # CSV用データ整形
+        csv_rows = []
+        headers = [
+            '候補者氏名', '姓', '名', 'メールアドレス', '企業名', '役職',
+            'プロフィール', '年齢', 'スクリーニング状況', 'アサイン状況',
+            '案件名', '依頼企業', '登録日'
+        ]
+        csv_rows.append(headers)
+
+        for i, row in enumerate(all_data):
+            # プログレス更新（処理の重い部分）
+            if i % 100 == 0 and progress_bar:
+                progress_value = min(0.85, 0.7 + (i / len(all_data)) * 0.15)
+                progress_bar.progress(progress_value)
+
+            # 安全なデータ取得（Noneチェック）
+            contact = row.get('contacts') if row else None
+            contact = contact if contact is not None else {}
+
+            company = contact.get('target_companies') if contact else None
+            company = company if company is not None else {}
+
+            project = row.get('projects') if row else None
+            project = project if project is not None else {}
+
+            project_company = project.get('client_companies') if project else None
+            project_company = project_company if project_company is not None else {}
+
+            csv_row = [
+                contact.get('full_name', '') if contact else '',
+                contact.get('last_name', '') if contact else '',
+                contact.get('first_name', '') if contact else '',
+                contact.get('email_trial_history', '') if contact else '',
+                company.get('company_name', '') if company else '',
+                contact.get('position_name', '') if contact else '',
+                contact.get('profile', '') if contact else '',
+                contact.get('estimated_age', '') or contact.get('actual_age', '') if contact else '',
+                contact.get('screening_status', '') if contact else '',
+                row.get('assignment_status', '') if row else '',
+                project.get('project_name', '') if project else '',
+                project_company.get('company_name', '') if project_company else '',
+                row.get('created_at', '')[:10] if row and row.get('created_at') else ''
+            ]
+            csv_rows.append(csv_row)
+
+        if progress_bar:
+            progress_bar.progress(0.85)
+
+        # CSV文字列生成（Windows対応のUTF-8 BOM付き）
+        import io
+        output = io.StringIO()
+        import csv
+        writer = csv.writer(output)
+        writer.writerows(csv_rows)
+
+        # UTF-8 BOM付きで返す
+        return '\ufeff' + output.getvalue()
+
+    except Exception as e:
+        st.error(f"全案件CSV生成エラー: {str(e)}")
+        return None
+
+
+def generate_project_candidates_csv(project_id):
+    """レガシー関数（後方互換性のため）"""
+    try:
+        return generate_project_candidates_csv_with_progress(project_id, None, None)
+    except Exception as e:
+        st.error(f"CSV生成エラー: {str(e)}")
+        return None
+
+
+def generate_company_contacts_csv_with_progress(company_id, progress_bar, progress_text):
+    """プログレスバー付き企業別コンタクトデータのCSV生成"""
+    try:
+        progress_text.text("データベースからデータを取得中... (2/3)")
+        progress_bar.progress(0.4)
+
+        # ページング機能付きでデータを取得
+        page_size = 1000
+        offset = 0
+        all_data = []
+
+        while True:
+            # クエリ構築
+            query = supabase.table('contacts').select("""
+                contact_id,
+                full_name,
+                last_name,
+                first_name,
+                email_trial_history,
+                position_name,
+                department_name,
+                profile,
+                screening_status,
+                estimated_age,
+                actual_age,
+                created_at,
+                target_companies!contacts_target_company_id_fkey(company_name)
+            """)
+
+            # 企業IDが指定されている場合のみフィルタリング
+            if company_id is not None:
+                query = query.eq('target_company_id', company_id)
+
+            response = query.range(offset, offset + page_size - 1).execute()
+            
+            if not response.data:
+                break
+                
+            all_data.extend(response.data)
+            offset += page_size
+            
+            # プログレス更新
+            if progress_bar:
+                progress_value = min(0.8, 0.4 + (len(all_data) / max(1, len(all_data) + 100)) * 0.4)
+                progress_bar.progress(progress_value)
+        
+        if not all_data:
+            return None
+        
+        if progress_text:
+            progress_text.text("CSVファイルを生成中... (2/3)")
+        if progress_bar:
+            progress_bar.progress(0.7)
+        
+        # CSV用データ整形
+        csv_rows = []
+        headers = [
+            '氏名', '姓', '名', 'メールアドレス', '企業名', '部署名', '役職',
+            'プロフィール', '年齢', 'スクリーニング状況', '登録日'
+        ]
+        csv_rows.append(headers)
+        
+        for i, contact in enumerate(all_data):
+            # プログレス更新（処理の重い部分）
+            if i % 100 == 0 and progress_bar:
+                progress_value = min(0.85, 0.7 + (i / len(all_data)) * 0.15)
+                progress_bar.progress(progress_value)
+            
+            # 安全なデータ取得（Noneチェック）
+            company = contact.get('target_companies') if contact else None
+            company = company if company is not None else {}
+            
+            csv_row = [
+                contact.get('full_name', '') if contact else '',
+                contact.get('last_name', '') if contact else '',
+                contact.get('first_name', '') if contact else '',
+                contact.get('email_trial_history', '') if contact else '',
+                company.get('company_name', '') if company else '',
+                contact.get('department_name', '') if contact else '',
+                contact.get('position_name', '') if contact else '',
+                contact.get('profile', '') if contact else '',
+                contact.get('estimated_age', '') or contact.get('actual_age', '') if contact else '',
+                contact.get('screening_status', '') if contact else '',
+                contact.get('created_at', '')[:10] if contact and contact.get('created_at') else ''
+            ]
+            csv_rows.append(csv_row)
+        
+        if progress_bar:
+            progress_bar.progress(0.85)
+        
+        # CSV文字列生成（Windows対応のUTF-8 BOM付き）
+        import io
+        output = io.StringIO()
+        import csv
+        writer = csv.writer(output)
+        writer.writerows(csv_rows)
+        
+        return '\ufeff' + output.getvalue()
+        
+    except Exception as e:
+        st.error(f"CSV生成エラー: {str(e)}")
+        return None
+
+
+def generate_company_contacts_csv(company_id):
+    """レガシー関数（後方互換性のため）"""
+    try:
+        return generate_company_contacts_csv_with_progress(company_id, None, None)
+    except Exception as e:
+        st.error(f"CSV生成エラー: {str(e)}")
+        return None
+
+
+def generate_full_backup_csv_with_progress(selected_tables, backup_tables, progress_bar, progress_text):
+    """プログレスバー付き全データバックアップCSV生成"""
+    try:
+        import io
+        output = io.StringIO()
+        import csv
+        writer = csv.writer(output)
+        
+        total_tables = len(selected_tables)
+        
+        # 各テーブルのデータを連続して出力
+        for i, table_name in enumerate(selected_tables):
+            table_key = backup_tables[table_name]
+            
+            if progress_text:
+                progress_text.text(f"テーブル処理中: {table_name} ({i+1}/{total_tables})")
+            base_progress = 0.2 + (i / total_tables) * 0.6
+            if progress_bar:
+                progress_bar.progress(base_progress)
+            
+            # テーブル名をヘッダーとして追加
+            writer.writerow([f"=== {table_name} ==="])
+            
+            # ページング機能付きでテーブルデータ取得
+            page_size = 1000
+            offset = 0
+            table_data = []
+            
+            while True:
+                response = supabase.table(table_key)\
+                    .select('*')\
+                    .range(offset, offset + page_size - 1)\
+                    .execute()
+                
+                if not response.data:
+                    break
+                    
+                table_data.extend(response.data)
+                offset += page_size
+                
+                # テーブル内でのプログレス更新
+                if progress_bar:
+                    inner_progress = base_progress + (len(table_data) / max(1, len(table_data) + 100)) * (0.6 / total_tables) * 0.8
+                    progress_bar.progress(min(0.8, inner_progress))
+            
+            if table_data and len(table_data) > 0:
+                # 最初の有効なレコードからヘッダーを取得
+                valid_record = None
+                for record in table_data:
+                    if record:
+                        valid_record = record
+                        break
+                
+                if valid_record:
+                    # ヘッダー行
+                    headers = list(valid_record.keys())
+                    writer.writerow(headers)
+                    
+                    # データ行（安全なアクセス）
+                    for j, row in enumerate(table_data):
+                        if row:
+                            data_row = [str(row.get(header, '')) if row.get(header) is not None else '' for header in headers]
+                            writer.writerow(data_row)
+                        
+                        # 大量データの場合のプログレス更新
+                        if j % 500 == 0 and progress_bar:
+                            write_progress = base_progress + (0.6 / total_tables) * 0.8 + (j / len(table_data)) * (0.6 / total_tables) * 0.2
+                            progress_bar.progress(min(0.8, write_progress))
+            
+            # テーブル間の区切り
+            writer.writerow([])
+        
+        if progress_bar:
+            progress_bar.progress(0.85)
+        
+        return '\ufeff' + output.getvalue()
+        
+    except Exception as e:
+        st.error(f"バックアップ生成エラー: {str(e)}")
+        return None
+
+
+def generate_full_backup_csv(selected_tables, backup_tables):
+    """レガシー関数（後方互換性のため）"""
+    try:
+        return generate_full_backup_csv_with_progress(selected_tables, backup_tables, None, None)
+    except Exception as e:
+        st.error(f"バックアップ生成エラー: {str(e)}")
+        return None
 
 
 if __name__ == "__main__":
