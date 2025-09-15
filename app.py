@@ -656,25 +656,35 @@ def main():
         # "📋 DB仕様書": "specifications"
     }
     
-    # URLパラメータからページを取得、なければデフォルト
-    default_page_key = query_params.get("page", "contacts")
-    default_page_name = next((name for name, key in pages.items() if key == default_page_key), "👥 コンタクト管理")
-    
-    selected_page = st.sidebar.radio("ページを選択", list(pages.keys()), index=list(pages.keys()).index(default_page_name))
+    # セッション状態でページを管理
+    if 'selected_page_key' not in st.session_state:
+        st.session_state.selected_page_key = query_params.get("page", "contacts")
+
+    # デフォルトページ名を取得
+    default_page_name = next((name for name, key in pages.items() if key == st.session_state.selected_page_key), "👥 コンタクト管理")
+
+    # ラジオボタンでページ選択
+    selected_page = st.sidebar.radio(
+        "ページを選択",
+        list(pages.keys()),
+        index=list(pages.keys()).index(default_page_name),
+        key="page_radio"
+    )
     page_key = pages[selected_page]
-    
-    # URLパラメータを更新
-    if query_params.get("page") != page_key:
+
+    # ページが変更された場合のみセッション状態とURLを更新
+    if st.session_state.selected_page_key != page_key:
+        st.session_state.selected_page_key = page_key
         st.query_params.update({"page": page_key})
     
     # ページが案件管理以外に変更された場合、案件編集関連のセッション状態をクリア
     if 'current_page_key' not in st.session_state:
-        st.session_state.current_page_key = page_key
-    elif st.session_state.current_page_key != page_key:
-        if st.session_state.current_page_key == "projects" and page_key != "projects":
+        st.session_state.current_page_key = st.session_state.selected_page_key
+    elif st.session_state.current_page_key != st.session_state.selected_page_key:
+        if st.session_state.current_page_key == "projects" and st.session_state.selected_page_key != "projects":
             # 案件管理から他のページに移動した場合、編集状態をクリア
             clear_project_editing_state()
-        st.session_state.current_page_key = page_key
+        st.session_state.current_page_key = st.session_state.selected_page_key
     
     # サンプルデータ使用オプション
     use_sample_data = st.sidebar.checkbox("🎯 サンプルデータを使用", value=True, help="実際のデータが少ない場合に有効にしてください")
@@ -686,29 +696,30 @@ def main():
         st.rerun()
     
     # ページルーティング
-    if page_key == "dashboard":
+    current_page = st.session_state.selected_page_key
+    if current_page == "dashboard":
         show_dashboard(use_sample_data)
-    elif page_key == "contacts":
+    elif current_page == "contacts":
         show_contacts()
-    elif page_key == "projects":
+    elif current_page == "projects":
         show_projects(use_sample_data)
-    elif page_key == "matching":
+    elif current_page == "matching":
         show_matching()
-    elif page_key == "search_progress":
+    elif current_page == "search_progress":
         show_search_progress()
-    elif page_key == "keyword_search":
+    elif current_page == "keyword_search":
         show_keyword_search()
-    elif page_key == "email_management":
+    elif current_page == "email_management":
         show_email_management()
-    elif page_key == "company_management":
+    elif current_page == "company_management":
         show_company_management()
-    elif page_key == "import":
+    elif current_page == "import":
         show_data_import()
-    elif page_key == "export":
+    elif current_page == "export":
         show_data_export()
-    elif page_key == "masters":
+    elif current_page == "masters":
         show_masters()
-    elif page_key == "specifications":
+    elif current_page == "specifications":
         show_specifications()
 
 
