@@ -660,22 +660,27 @@ def main():
     if 'selected_page_key' not in st.session_state:
         st.session_state.selected_page_key = query_params.get("page", "contacts")
 
-    # デフォルトページ名を取得
-    default_page_name = next((name for name, key in pages.items() if key == st.session_state.selected_page_key), "👥 コンタクト管理")
+    # ラジオボタンの選択インデックスを管理
+    if 'page_radio_index' not in st.session_state:
+        default_page_name = next((name for name, key in pages.items() if key == st.session_state.selected_page_key), "👥 コンタクト管理")
+        st.session_state.page_radio_index = list(pages.keys()).index(default_page_name)
+
+    def on_page_change():
+        selected_page = st.session_state.page_radio_select
+        page_key = pages[selected_page]
+        if st.session_state.selected_page_key != page_key:
+            st.session_state.selected_page_key = page_key
+            st.session_state.page_radio_index = list(pages.keys()).index(selected_page)
+            st.query_params.update({"page": page_key})
 
     # ラジオボタンでページ選択
     selected_page = st.sidebar.radio(
         "ページを選択",
         list(pages.keys()),
-        index=list(pages.keys()).index(default_page_name),
-        key="page_radio"
+        index=st.session_state.page_radio_index,
+        key="page_radio_select",
+        on_change=on_page_change
     )
-    page_key = pages[selected_page]
-
-    # ページが変更された場合のみセッション状態とURLを更新
-    if st.session_state.selected_page_key != page_key:
-        st.session_state.selected_page_key = page_key
-        st.query_params.update({"page": page_key})
     
     # ページが案件管理以外に変更された場合、案件編集関連のセッション状態をクリア
     if 'current_page_key' not in st.session_state:
@@ -1497,7 +1502,7 @@ def show_contacts_list():
             # 選択可能なデータフレームとして表示
             selected_row = st.dataframe(
                 filtered_df[display_columns].fillna(''),
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
                 column_config=column_config,
                 height=400,
