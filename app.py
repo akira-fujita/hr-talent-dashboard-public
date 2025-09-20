@@ -6,10 +6,10 @@ from datetime import datetime, date
 import numpy as np
 from supabase import create_client
 
-
 # ========================================
 # UI統一コンポーネント
 # ========================================
+
 
 class UIComponents:
     """統一されたUIコンポーネント"""
@@ -48,10 +48,10 @@ class UIComponents:
         """セカンダリボタン"""
         return st.button(label, key=key, disabled=disabled, **UIComponents.SECONDARY_BUTTON)
 
-
 # ========================================
 # エラーハンドリング
 # ========================================
+
 
 class ErrorHandler:
     """ユーザーフレンドリーなエラーハンドリング"""
@@ -220,7 +220,8 @@ def fetch_contacts():
             # HR Dashboardに合わせてカラム名を調整
             if not df.empty:
                 column_mapping = {
-                    'full_name': 'name',
+                    # Keep full_name as-is for consistency with display logic
+                    # 'full_name': 'name',  # Commented out - keep original column name
                     'last_name': 'last_name',
                     'first_name': 'first_name',
                     # 'company_name': 'company',  # target_companies関連で処理
@@ -574,7 +575,7 @@ def fetch_contact_approaches(contact_id):
         response = supabase.table('contact_approaches')\
             .select('*, approach_methods(method_name)')\
             .eq('contact_id', contact_id)\
-            .order('approach_order')\
+            .order('approach_date', desc=True)\
             .execute()
         
         if response.data:
@@ -585,7 +586,8 @@ def fetch_contact_approaches(contact_id):
                     'approach_date': approach['approach_date'],
                     'approach_method_id': approach['approach_method_id'],
                     'method_name': approach['approach_methods']['method_name'] if approach['approach_methods'] else 'N/A',
-                    'approach_order': approach['approach_order']
+                    'approach_order': approach['approach_order'],
+                    'notes': approach.get('notes', '')
                 })
             return pd.DataFrame(approaches_data)
         else:
@@ -632,7 +634,7 @@ def fetch_project_assignments_for_contact(contact_id):
 
 def main():
     st.title("👥 HR Talent Dashboard")
-    st.text("version 0.6")
+    st.text("version 0.7.0")
     
     # URLクエリパラメータから現在のページを取得
     query_params = st.query_params
@@ -1444,7 +1446,7 @@ def show_contacts_list():
             'profile', 'comments', 'email', 'phone', 'linkedin_url', 'wantedly_url',
             'other_urls', 'work_history', 'skills', 'certifications', 'education',
             'note', 'screening_status', 'priority_name', 'approach_method',
-            'last_contact_date', 'next_action'
+            'last_contact_date', 'next_action', 'work_comment'
         ]
         
         for col in search_columns:
@@ -1485,6 +1487,7 @@ def show_contacts_list():
             'position_name': "役職",
             'priority_name': "優先度",
             'screening_status': "精査状況",
+            'work_comment': "作業コメント",
             'search_date': ("検索日", st.column_config.DateColumn("検索日"))
         }
         
@@ -1575,18 +1578,66 @@ def show_contacts_list():
                 with tab1:
                     # プロフィール関連情報を包括的に表示
                     if 'profile' in selected_contact.index and pd.notna(selected_contact['profile']):
-                        st.text_area("プロフィール詳細", selected_contact['profile'], height=200, disabled=True)
+                        st.markdown("**プロフィール詳細:**")
+                        profile_text = str(selected_contact['profile']).replace('\n', '\n\n')
+                        st.markdown(f"""
+                        <div style="
+                            background-color: #f8f9fa;
+                            border: 1px solid #dee2e6;
+                            border-radius: 0.375rem;
+                            padding: 0.75rem;
+                            margin-bottom: 1rem;
+                            font-family: inherit;
+                            font-size: 0.9rem;
+                            line-height: 1.5;
+                            white-space: pre-wrap;
+                        ">
+                        {profile_text}
+                        </div>
+                        """, unsafe_allow_html=True)
                     
                     # 職歴・スキル情報
                     col_prof1, col_prof2 = st.columns(2)
                     with col_prof1:
                         if 'career_history' in selected_contact.index and pd.notna(selected_contact['career_history']):
-                            st.text_area("職歴", selected_contact['career_history'], height=100, disabled=True)
+                            st.markdown("**職歴:**")
+                            career_text = str(selected_contact['career_history']).replace('\n', '\n\n')
+                            st.markdown(f"""
+                            <div style="
+                                background-color: #f8f9fa;
+                                border: 1px solid #dee2e6;
+                                border-radius: 0.375rem;
+                                padding: 0.75rem;
+                                margin-bottom: 1rem;
+                                font-family: inherit;
+                                font-size: 0.9rem;
+                                line-height: 1.5;
+                                white-space: pre-wrap;
+                            ">
+                            {career_text}
+                            </div>
+                            """, unsafe_allow_html=True)
                         if 'skills' in selected_contact.index and pd.notna(selected_contact['skills']):
                             st.text(f"スキル: {selected_contact['skills']}")
                     with col_prof2:
                         if 'education' in selected_contact.index and pd.notna(selected_contact['education']):
-                            st.text_area("学歴", selected_contact['education'], height=100, disabled=True)
+                            st.markdown("**学歴:**")
+                            education_text = str(selected_contact['education']).replace('\n', '\n\n')
+                            st.markdown(f"""
+                            <div style="
+                                background-color: #f8f9fa;
+                                border: 1px solid #dee2e6;
+                                border-radius: 0.375rem;
+                                padding: 0.75rem;
+                                margin-bottom: 1rem;
+                                font-family: inherit;
+                                font-size: 0.9rem;
+                                line-height: 1.5;
+                                white-space: pre-wrap;
+                            ">
+                            {education_text}
+                            </div>
+                            """, unsafe_allow_html=True)
                         if 'certifications' in selected_contact.index and pd.notna(selected_contact['certifications']):
                             st.text(f"資格: {selected_contact['certifications']}")
                     
@@ -1608,34 +1659,58 @@ def show_contacts_list():
                     has_comments = False
                     for field, label in comment_fields:
                         if field in selected_contact.index and pd.notna(selected_contact[field]):
-                            st.text_area(label, selected_contact[field], height=80, disabled=True)
+                            st.markdown(f"**{label}:**")
+                            # 視認性を良くするため、枠付きのmarkdownで表示
+                            comment_text = str(selected_contact[field]).replace('\n', '\n\n')
+                            st.markdown(f"""
+                            <div style="
+                                background-color: #f8f9fa;
+                                border: 1px solid #dee2e6;
+                                border-radius: 0.375rem;
+                                padding: 0.75rem;
+                                margin-bottom: 1rem;
+                                font-family: inherit;
+                                font-size: 0.9rem;
+                                line-height: 1.5;
+                                white-space: pre-wrap;
+                            ">
+                            {comment_text}
+                            </div>
+                            """, unsafe_allow_html=True)
                             has_comments = True
                     
                     if not has_comments:
                         st.info("コメントはありません")
                 
                 with tab3:
-                    # コンタクト履歴関連の全情報
-                    contact_fields = [
-                        ('email_trial_history', 'メール履歴'),
-                        ('call_history', '電話履歴'),
-                        ('meeting_history', '面談履歴'),
-                        ('last_contact_date', '最終コンタクト日'),
-                        ('next_action_date', '次回アクション予定日'),
-                        ('contact_status', 'コンタクトステータス')
-                    ]
-                    
-                    has_contact_info = False
-                    for field, label in contact_fields:
-                        if field in selected_contact.index and pd.notna(selected_contact[field]):
-                            if 'history' in field:
-                                st.text_area(label, selected_contact[field], height=100, disabled=True)
-                            else:
-                                st.text(f"{label}: {selected_contact[field]}")
-                            has_contact_info = True
-                    
-                    if not has_contact_info:
-                        st.info("コンタクト履歴はありません")
+                    # アプローチ履歴を表示
+                    st.markdown("#### 📞 アプローチ履歴")
+                    contact_id = selected_contact['contact_id']
+                    approaches_df = fetch_contact_approaches(contact_id)
+
+                    if not approaches_df.empty:
+                        # アプローチ履歴を表示
+                        for _, approach in approaches_df.iterrows():
+                            with st.container():
+                                col_date, col_method, col_notes = st.columns([2, 2, 4])
+
+                                with col_date:
+                                    st.text(f"📅 {approach['approach_date']}")
+
+                                with col_method:
+                                    method_name = approach.get('method_name', 'N/A')
+                                    st.text(f"📞 {method_name}")
+
+                                with col_notes:
+                                    notes_text = approach.get('notes', '') or ''
+                                    if notes_text:
+                                        st.text(f"📝 {notes_text}")
+                                    else:
+                                        st.text("📝 -")
+
+                                st.markdown("---")
+                    else:
+                        st.info("アプローチ履歴はありません")
                 
                 with tab4:
                     # リンクと検索関連情報
@@ -1692,7 +1767,7 @@ def show_contacts_list():
                         'search_assignee_id': '検索担当者ID',
                         'search_assignee': '検索担当者',
                         'search_date': '検索日',
-                        'email_trial_history': 'メール履歴',
+                        'email_address': 'メールアドレス',
                         'department_name': '部署名',
                         'department_id': '部署ID',
                         'position_name': '役職名',
@@ -2140,6 +2215,7 @@ def show_projects_list(use_sample_data=False):
         with col3:
             # project_companiesから企業名を抽出（新しい構造）
             if 'project_companies' in projects_df.columns:
+
                 def extract_company_names_new(pc_list):
                     if not pc_list or not isinstance(pc_list, list):
                         return []
@@ -2162,6 +2238,7 @@ def show_projects_list(use_sample_data=False):
                 st.session_state.project_filter_company = selected_company
             # 互換性のため旧構造もサポート
             elif 'project_target_companies' in projects_df.columns:
+
                 # project_target_companiesから企業名を抽出
                 def extract_company_names(ptc_list):
                     if not ptc_list or not isinstance(ptc_list, list):
@@ -2209,6 +2286,7 @@ def show_projects_list(use_sample_data=False):
         if selected_company != "すべて":
             # project_companiesから該当する企業を含む案件をフィルター（新しい構造）
             if 'project_companies' in filtered_projects.columns:
+
                 def has_company_new(pc_list):
                     if not pc_list or not isinstance(pc_list, list):
                         return False
@@ -2221,6 +2299,7 @@ def show_projects_list(use_sample_data=False):
                 filtered_projects = filtered_projects[company_mask]
             # 互換性のため旧構造もサポート
             elif 'project_target_companies' in filtered_projects.columns:
+
                 # project_target_companiesから該当する企業を含む案件をフィルター
                 def has_company(ptc_list):
                     if not ptc_list or not isinstance(ptc_list, list):
@@ -2249,6 +2328,7 @@ def show_projects_list(use_sample_data=False):
         
         # 新しいスキーマ対応: project_companies経由で依頼企業とターゲット企業を分けて表示
         if 'project_companies' in filtered_projects.columns:
+
             def extract_client_companies(pc_list):
                 if not pc_list:
                     return ''
@@ -2273,7 +2353,6 @@ def show_projects_list(use_sample_data=False):
             
             filtered_projects['client_companies'] = filtered_projects['project_companies'].apply(extract_client_companies)
             filtered_projects['target_companies'] = filtered_projects['project_companies'].apply(extract_target_companies)
-            
             
             # 依頼企業を案件名の次に、ターゲット企業をその後に挿入
             display_columns.insert(2, 'client_companies')
@@ -2301,6 +2380,7 @@ def show_projects_list(use_sample_data=False):
         
         # 新しいスキーマ対応: project_companies経由で部署名取得
         if 'project_companies' in filtered_projects.columns:
+
             def extract_companies_and_departments_new(pc_list):
                 if not pc_list:
                     return ''
@@ -2690,7 +2770,23 @@ def show_projects_list(use_sample_data=False):
                     
                     # 職務内容
                     if 'job_description' in selected_project.index and pd.notna(selected_project['job_description']):
-                        st.text_area("職務内容", selected_project['job_description'], height=120, disabled=True)
+                        st.markdown("**職務内容:**")
+                        job_desc_text = str(selected_project['job_description']).replace('\n', '\n\n')
+                        st.markdown(f"""
+                        <div style="
+                            background-color: #f8f9fa;
+                            border: 1px solid #dee2e6;
+                            border-radius: 0.375rem;
+                            padding: 0.75rem;
+                            margin-bottom: 1rem;
+                            font-family: inherit;
+                            font-size: 0.9rem;
+                            line-height: 1.5;
+                            white-space: pre-wrap;
+                        ">
+                        {job_desc_text}
+                        </div>
+                        """, unsafe_allow_html=True)
                     
                     # 基本情報を2列で表示
                     col_basic1, col_basic2 = st.columns(2)
@@ -2703,7 +2799,23 @@ def show_projects_list(use_sample_data=False):
                         if 'job_classification' in selected_project.index and pd.notna(selected_project['job_classification']):
                             st.text(f"職種: {selected_project['job_classification']}")
                         if 'work_location' in selected_project.index and pd.notna(selected_project['work_location']):
-                            st.text_area("勤務地", selected_project['work_location'], height=60, disabled=True)
+                            st.markdown("**勤務地:**")
+                            location_text = str(selected_project['work_location']).replace('\n', '\n\n')
+                            st.markdown(f"""
+                            <div style="
+                                background-color: #f8f9fa;
+                                border: 1px solid #dee2e6;
+                                border-radius: 0.375rem;
+                                padding: 0.75rem;
+                                margin-bottom: 1rem;
+                                font-family: inherit;
+                                font-size: 0.9rem;
+                                line-height: 1.5;
+                                white-space: pre-wrap;
+                            ">
+                            {location_text}
+                            </div>
+                            """, unsafe_allow_html=True)
                     
                     with col_basic2:
                         st.markdown("**👤 人物要件**")
@@ -2712,17 +2824,65 @@ def show_projects_list(use_sample_data=False):
                         if 'max_age' in selected_project.index and pd.notna(selected_project['max_age']):
                             st.text(f"最高年齢: {selected_project['max_age']}歳")
                         if 'education_requirement' in selected_project.index and pd.notna(selected_project['education_requirement']):
-                            st.text_area("学歴要件", selected_project['education_requirement'], height=60, disabled=True)
+                            st.markdown("**学歴要件:**")
+                            edu_req_text = str(selected_project['education_requirement']).replace('\n', '\n\n')
+                            st.markdown(f"""
+                            <div style="
+                                background-color: #f8f9fa;
+                                border: 1px solid #dee2e6;
+                                border-radius: 0.375rem;
+                                padding: 0.75rem;
+                                margin-bottom: 1rem;
+                                font-family: inherit;
+                                font-size: 0.9rem;
+                                line-height: 1.5;
+                                white-space: pre-wrap;
+                            ">
+                            {edu_req_text}
+                            </div>
+                            """, unsafe_allow_html=True)
                     
                     # スキル・資格要件
                     st.markdown("**🎯 スキル・資格要件**")
                     col_skill1, col_skill2 = st.columns(2)
                     with col_skill1:
                         if 'requirements' in selected_project.index and pd.notna(selected_project['requirements']):
-                            st.text_area("必須要件", selected_project['requirements'], height=80, disabled=True)
+                            st.markdown("**必須要件:**")
+                            req_text = str(selected_project['requirements']).replace('\n', '\n\n')
+                            st.markdown(f"""
+                            <div style="
+                                background-color: #f8f9fa;
+                                border: 1px solid #dee2e6;
+                                border-radius: 0.375rem;
+                                padding: 0.75rem;
+                                margin-bottom: 1rem;
+                                font-family: inherit;
+                                font-size: 0.9rem;
+                                line-height: 1.5;
+                                white-space: pre-wrap;
+                            ">
+                            {req_text}
+                            </div>
+                            """, unsafe_allow_html=True)
                     with col_skill2:
                         if 'required_qualifications' in selected_project.index and pd.notna(selected_project['required_qualifications']):
-                            st.text_area("必要資格", selected_project['required_qualifications'], height=80, disabled=True)
+                            st.markdown("**必要資格:**")
+                            qualif_text = str(selected_project['required_qualifications']).replace('\n', '\n\n')
+                            st.markdown(f"""
+                            <div style="
+                                background-color: #f8f9fa;
+                                border: 1px solid #dee2e6;
+                                border-radius: 0.375rem;
+                                padding: 0.75rem;
+                                margin-bottom: 1rem;
+                                font-family: inherit;
+                                font-size: 0.9rem;
+                                line-height: 1.5;
+                                white-space: pre-wrap;
+                            ">
+                            {qualif_text}
+                            </div>
+                            """, unsafe_allow_html=True)
                 
                 with tab2:
                     # 依頼企業担当者情報
@@ -3030,10 +3190,48 @@ def show_projects_list(use_sample_data=False):
                     
                     # 業務内容・要件
                     st.markdown("#### 📝 業務内容")
-                    st.text_area("", value=project.get('job_description', ''), height=100, key=f"desc_{project.get('project_id', 'unknown')}", disabled=True)
+                    job_desc = project.get('job_description', '')
+                    if job_desc:
+                        job_desc_text = str(job_desc).replace('\n', '\n\n')
+                        st.markdown(f"""
+                        <div style="
+                            background-color: #f8f9fa;
+                            border: 1px solid #dee2e6;
+                            border-radius: 0.375rem;
+                            padding: 0.75rem;
+                            margin-bottom: 1rem;
+                            font-family: inherit;
+                            font-size: 0.9rem;
+                            line-height: 1.5;
+                            white-space: pre-wrap;
+                        ">
+                        {job_desc_text}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.text("業務内容の記載がありません")
                     
                     st.markdown("#### 🎯 人材要件")
-                    st.text_area("", value=project.get('requirements', ''), height=100, key=f"req_{project.get('project_id', 'unknown')}", disabled=True)
+                    requirements = project.get('requirements', '')
+                    if requirements:
+                        req_text = str(requirements).replace('\n', '\n\n')
+                        st.markdown(f"""
+                        <div style="
+                            background-color: #f8f9fa;
+                            border: 1px solid #dee2e6;
+                            border-radius: 0.375rem;
+                            padding: 0.75rem;
+                            margin-bottom: 1rem;
+                            font-family: inherit;
+                            font-size: 0.9rem;
+                            line-height: 1.5;
+                            white-space: pre-wrap;
+                        ">
+                        {req_text}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.text("人材要件の記載がありません")
                     
                     # 候補者情報を表示
                     if project_id:
@@ -3652,7 +3850,7 @@ def show_projects_edit():
                 if current_client_company in client_company_options:
                     current_client_index = client_company_options.index(current_client_company)
                 
-                selected_client_company_name = st.selectbox("依頼企業を選択", client_company_options, 
+                selected_client_company_name = st.selectbox("依頼企業を選択", client_company_options,
                                                           index=current_client_index, key="edit_client_company_select")
                 
             except Exception as e:
@@ -3722,8 +3920,8 @@ def show_projects_edit():
             col7, col8 = st.columns(2)
             
             with col7:
-                project_phase = st.selectbox("プロジェクトフェーズ", 
-                                           options=["企画", "設計", "開発", "テスト", "運用・保守", "その他"], 
+                project_phase = st.selectbox("プロジェクトフェーズ",
+                                           options=["企画", "設計", "開発", "テスト", "運用・保守", "その他"],
                                            index=0 if not selected_project.get('project_phase') else 
                                            ["企画", "設計", "開発", "テスト", "運用・保守", "その他"].index(selected_project.get('project_phase', "企画")))
                 team_size = st.number_input("チーム規模", min_value=1, max_value=100, value=selected_project.get('team_size', 5))
@@ -3731,8 +3929,8 @@ def show_projects_edit():
                 
             with col8:
                 industry_type = st.text_input("業界・領域", value=selected_project.get('industry_type', ''))
-                remote_work = st.selectbox("リモートワーク", 
-                                         options=["不可", "一部可能", "完全リモート可能"], 
+                remote_work = st.selectbox("リモートワーク",
+                                         options=["不可", "一部可能", "完全リモート可能"],
                                          index=0 if not selected_project.get('remote_work') else 
                                          ["不可", "一部可能", "完全リモート可能"].index(selected_project.get('remote_work', "不可")))
                 overtime_policy = st.text_input("残業時間・方針", value=selected_project.get('overtime_policy', ''))
@@ -4764,7 +4962,7 @@ def show_specifications():
         │    name_search_key
         │    work_comment
         │    search_date
-        │    email_trial_history
+        │    email_address
         │    ap_date
         │    created_at
         │    updated_at
@@ -4805,7 +5003,7 @@ def show_specifications():
             ["work_comment", "TEXT", "", "NULL", "作業コメント"],
             ["search_assignee_id", "BIGINT", "FOREIGN KEY", "NULL", "検索担当者ID（search_assigneesテーブル参照）"],
             ["search_date", "DATE", "", "NULL", "検索日"],
-            ["email_trial_history", "TEXT", "", "NULL", "メール履歴"],
+            ["email_address", "TEXT", "", "NULL", "メールアドレス"],
             ["ap_date", "DATE", "", "NULL", "AP実施日"],
             ["approach_method_id", "BIGINT", "FOREIGN KEY", "NULL", "AP手法ID（approach_methodsテーブル参照）"],
             ["created_at", "TIMESTAMP", "DEFAULT", "NOT NULL", "作成日時"],
@@ -5097,7 +5295,7 @@ def show_contacts_create():
             work_comment = st.text_area("作業コメント", placeholder="作業時のメモ")
         
         st.markdown("#### 履歴情報")
-        email_trial_history = st.text_area("メール履歴", placeholder="メール送信履歴やトライアル状況")
+        email_address = st.text_area("メールアドレス", placeholder="コンタクトのメールアドレス")
         
         submitted = st.form_submit_button("登録", type="primary")
         
@@ -5160,7 +5358,7 @@ def show_contacts_create():
                     'work_comment': work_comment if work_comment else None,
                     'search_assignee_id': search_assignee_id,
                     'search_date': search_date.isoformat() if search_date else None,
-                    'email_trial_history': email_trial_history if email_trial_history else None,
+                    'email_address': email_address if email_address else None,
                     'department_name': selected_department if selected_department else None,
                     'position_name': position_name if position_name else None
                 }
@@ -5246,11 +5444,17 @@ def show_contacts_edit():
             if not approaches_df.empty:
                 st.markdown("**既存のアプローチ履歴:**")
                 for _, approach in approaches_df.iterrows():
-                    col_date, col_method, col_action = st.columns([2, 2, 1])
+                    col_date, col_method, col_notes, col_action = st.columns([2, 2, 3, 1])
                     with col_date:
                         st.text(f"📅 {approach['approach_date']}")
                     with col_method:
                         st.text(f"📞 {approach['method_name']}")
+                    with col_notes:
+                        notes_text = approach.get('notes', '') or ''
+                        if notes_text:
+                            st.text(f"📝 {notes_text}")
+                        else:
+                            st.text("📝 -")
                     with col_action:
                         if st.button(f"🗑️", key=f"delete_approach_{approach['approach_id']}", help="削除"):
                             try:
@@ -5284,33 +5488,44 @@ def show_contacts_edit():
                 if st.form_submit_button("📞 アプローチ履歴を追加"):
                     if selected_method:
                         try:
-                            # 次のapproach_orderを取得
+                            # 次のapproach_orderを取得（欠番を優先使用）
                             existing_approaches = supabase.table('contact_approaches').select('approach_order').eq('contact_id', contact_id).execute()
-                            max_order = 0
+                            used_orders = []
                             if existing_approaches.data:
-                                max_order = max([a['approach_order'] for a in existing_approaches.data])
-                            next_order = max_order + 1
-                            
-                            # アプローチ手法IDを取得
-                            method_id = None
-                            if not masters['approach_methods'].empty:
-                                method_data = masters['approach_methods'][masters['approach_methods']['method_name'] == selected_method]
-                                if not method_data.empty:
-                                    method_id = method_data.iloc[0]['method_id']
-                            
-                            if method_id:
-                                approach_data = {
-                                    'contact_id': contact_id,
-                                    'approach_date': approach_date.isoformat(),
-                                    'approach_method_id': method_id,
-                                    'approach_order': next_order
-                                }
-                                
-                                supabase.table('contact_approaches').insert(approach_data).execute()
-                                st.success("✅ アプローチ履歴を追加しました！")
-                                st.rerun()
+                                used_orders = [a['approach_order'] for a in existing_approaches.data]
+
+                            # 1〜3の中で最初の使用されていない番号を探す
+                            next_order = None
+                            for i in range(1, 4):  # 1, 2, 3
+                                if i not in used_orders:
+                                    next_order = i
+                                    break
+
+                            # アプローチ履歴の上限チェック（データベース制約により最大3つまで）
+                            if next_order is None:
+                                st.error("⚠️ このコンタクトのアプローチ履歴は最大3つまでです。既存の履歴を削除してから新しいアプローチを追加してください。")
                             else:
-                                st.error("アプローチ手法が見つかりません")
+                                # アプローチ手法IDを取得
+                                method_id = None
+                                if not masters['approach_methods'].empty:
+                                    method_data = masters['approach_methods'][masters['approach_methods']['method_name'] == selected_method]
+                                    if not method_data.empty:
+                                        method_id = int(method_data.iloc[0]['method_id'])
+
+                                if method_id:
+                                    approach_data = {
+                                        'contact_id': int(contact_id),
+                                        'approach_date': approach_date.isoformat(),
+                                        'approach_method_id': method_id,
+                                        'approach_order': int(next_order),
+                                        'notes': project_note if project_note else None
+                                    }
+
+                                    supabase.table('contact_approaches').insert(approach_data).execute()
+                                    st.success("✅ アプローチ履歴を追加しました！")
+                                    st.rerun()
+                                else:
+                                    st.error("アプローチ手法が見つかりません")
                         except Exception as e:
                             st.error(f"追加に失敗しました: {str(e)}")
                     else:
@@ -5444,7 +5659,7 @@ def show_contacts_edit():
                 primary_screening_comment = st.text_area("精査コメント", value=selected_contact.get('primary_screening_comment', ''))
                 work_comment = st.text_area("作業コメント", value=selected_contact.get('work_comment', ''))
             
-            email_trial_history = st.text_area("メール履歴", value=selected_contact.get('email_trial_history', ''))
+            email_address = st.text_area("メールアドレス", value=selected_contact.get('email_address', ''))
             
             submitted = st.form_submit_button("更新", type="primary")
             
@@ -5502,7 +5717,7 @@ def show_contacts_edit():
                         'work_comment': work_comment if work_comment else None,
                         'search_assignee_id': search_assignee_id,
                         'search_date': search_date.isoformat() if search_date else None,
-                        'email_trial_history': email_trial_history if email_trial_history else None,
+                        'email_address': email_address if email_address else None,
                         'department_name': selected_department if selected_department else None,
                         'position_name': position_name if position_name else None
                     }
@@ -5651,7 +5866,6 @@ def show_data_import():
     st.title("📥 データインポート")
     st.markdown("---")
     
-    
     # インポート設定
     st.subheader("⚙️ 共通インポート設定")
     
@@ -5746,7 +5960,7 @@ def show_data_import():
                         st.warning("⚠️ データベース接続がありません。サンプルデータモードでは実際のインポートはできません。")
                         return
                         
-                    success_count, error_count, errors = import_company_data(df, company_name_col, industry_col, target_dept_col, duplicate_handling)
+                    success_count, error_count, errors, skipped_records = import_company_data(df, company_name_col, industry_col, target_dept_col, duplicate_handling)
                     
                     # 結果サマリー表示
                     st.markdown("### 📊 インポート結果")
@@ -5760,6 +5974,12 @@ def show_data_import():
                         if error_count > 0:
                             st.error(f"❌ **エラー: {error_count}件**\n処理をスキップしました")
                     
+                    # スキップされたレコードの詳細表示
+                    if skipped_records:
+                        st.warning("⚠️ スキップされたレコード:")
+                        for record in skipped_records:
+                            st.write(f"• 行{record['row']}: {record['company']} - {record['reason']}")
+
                     # エラー詳細表示
                     if error_count > 0 and errors:
                         st.markdown("---")
@@ -5923,16 +6143,30 @@ def show_data_import():
                 mapping_config = {}
                 
                 with col1:
+                    # 企業名カラムの検出（[必須]表記にも対応）
+                    company_col_idx = 0
+                    for i, col in enumerate(df.columns):
+                        if '企業名' in str(col):
+                            company_col_idx = i
+                            break
+
                     mapping_config['company_name'] = st.selectbox(
                         "企業名カラム *",
                         options=df.columns.tolist(),
-                        index=df.columns.tolist().index('企業名') if '企業名' in df.columns else 0,
+                        index=company_col_idx,
                         key="contact_company"
                     )
+                    # 氏名カラムの検出（[必須]表記にも対応）
+                    fullname_col_idx = 0
+                    for i, col in enumerate(df.columns):
+                        if '氏名' in str(col):
+                            fullname_col_idx = i
+                            break
+
                     mapping_config['full_name'] = st.selectbox(
                         "氏名カラム *",
                         options=df.columns.tolist(),
-                        index=df.columns.tolist().index('氏名') if '氏名' in df.columns else 0,
+                        index=fullname_col_idx,
                         key="contact_name"
                     )
                     mapping_config['department'] = st.selectbox(
@@ -5949,43 +6183,85 @@ def show_data_import():
                     )
                 
                 with col2:
+                    # メールカラムの検出（[必須]表記にも対応）
+                    email_col_idx = 0
+                    for i, col in enumerate(df.columns):
+                        if 'メール' in str(col):
+                            email_col_idx = i
+                            break
+
                     mapping_config['email'] = st.selectbox(
                         "メールアドレスカラム *",
                         options=df.columns.tolist(),
-                        index=df.columns.tolist().index('メール') if 'メール' in df.columns else 0,
+                        index=email_col_idx,
                         key="contact_email",
                         help="必須項目：連絡手段として必要です"
                     )
+                    # 電話番号カラムの検出（[任意]表記にも対応）
+                    phone_col_idx = 0
+                    for i, col in enumerate(df.columns):
+                        if '電話番号' in str(col):
+                            phone_col_idx = i + 1  # +1 for '選択しない' option
+                            break
+
                     mapping_config['phone'] = st.selectbox(
                         "電話番号カラム",
                         options=['選択しない'] + df.columns.tolist(),
-                        index=df.columns.tolist().index('電話番号') + 1 if '電話番号' in df.columns else 0,
+                        index=phone_col_idx,
                         key="contact_phone"
                     )
+                    # 年齢カラムの検出（[任意]表記にも対応）
+                    age_col_idx = 0
+                    for i, col in enumerate(df.columns):
+                        if '年齢' in str(col):
+                            age_col_idx = i + 1  # +1 for '選択しない' option
+                            break
+
                     mapping_config['age'] = st.selectbox(
                         "年齢カラム",
                         options=['選択しない'] + df.columns.tolist(),
-                        index=df.columns.tolist().index('年齢') + 1 if '年齢' in df.columns else 0,
+                        index=age_col_idx,
                         key="contact_age"
                     )
                 
                 with col3:
+                    # 優先度カラムの検出（[任意]表記にも対応）
+                    priority_col_idx = 0
+                    for i, col in enumerate(df.columns):
+                        if '優先度' in str(col):
+                            priority_col_idx = i + 1  # +1 for '選択しない' option
+                            break
+
                     mapping_config['priority'] = st.selectbox(
                         "優先度カラム",
                         options=['選択しない'] + df.columns.tolist(),
-                        index=df.columns.tolist().index('優先度') + 1 if '優先度' in df.columns else 0,
+                        index=priority_col_idx,
                         key="contact_priority"
                     )
+                    # 担当者カラムの検出（[任意]表記にも対応）
+                    assignee_col_idx = 0
+                    for i, col in enumerate(df.columns):
+                        if '担当者' in str(col):
+                            assignee_col_idx = i + 1  # +1 for '選択しない' option
+                            break
+
                     mapping_config['assignee'] = st.selectbox(
                         "担当者カラム",
                         options=['選択しない'] + df.columns.tolist(),
-                        index=df.columns.tolist().index('担当者') + 1 if '担当者' in df.columns else 0,
+                        index=assignee_col_idx,
                         key="contact_assignee"
                     )
+                    # スクリーニング状況カラムの検出（[任意]表記にも対応）
+                    status_col_idx = 0
+                    for i, col in enumerate(df.columns):
+                        if 'スクリーニング状況' in str(col):
+                            status_col_idx = i + 1  # +1 for '選択しない' option
+                            break
+
                     mapping_config['status'] = st.selectbox(
                         "スクリーニング状況カラム",
                         options=['選択しない'] + df.columns.tolist(),
-                        index=df.columns.tolist().index('スクリーニング状況') + 1 if 'スクリーニング状況' in df.columns else 0,
+                        index=status_col_idx,
                         key="contact_status"
                     )
                 
@@ -6172,21 +6448,57 @@ def generate_project_sample_csv():
 
 
 def generate_contact_sample_csv():
-    """コンタクトデータサンプルCSVを生成"""
-    sample_data = {
-        '企業名': ['株式会社サンプルIT', 'サンプル商事株式会社', '株式会社サンプル製造', '株式会社サンプルIT', 'サンプル商事株式会社'],
-        '氏名': ['山田太郎', '佐藤花子', '田中次郎', '鈴木一郎', '高橋美咲'],
-        'メール': ['yamada@sample-it.co.jp', 'sato@sample-trade.com', 'tanaka@sample-mfg.co.jp', 'suzuki@sample-it.co.jp', 'takahashi@sample-trade.com'],  # 必須項目として3番目に配置
-        '部署': ['システム開発部', '営業部', '生産管理部', 'インフラ部', 'マーケティング部'],
-        '役職': ['部長', 'マネージャー', 'スペシャリスト', '課長', '主任'],
-        '電話番号': ['03-1234-5678', '03-2345-6789', '045-3456-7890', '03-1234-5679', '03-2345-6780'],
-        '年齢': [45, 38, 42, 35, 29],
-        '優先度': ['高', '中', '高', '中', '低'],
-        '担当者': ['田中', '佐藤', '山田', '田中', '佐藤'],
-        'スクリーニング状況': ['未実施', '実施済み', '実施中', '未実施', '実施済み']
-    }
-    
-    df = pd.DataFrame(sample_data)
+    """コンタクトデータサンプルCSVを生成（履歴データ対応版）"""
+    # 改良されたサンプルデータ（必須・任意を明示したヘッダー付き）
+    sample_data = [
+        # 完全なデータパターン
+        [
+            '株式会社サンプルIT', '山田太郎', 'yamada@sample-it.co.jp', 'システム開発部', '部長',
+            '03-1234-5678', '45', '高', '田中', '実施済み',
+            '2025-01-15', 'メール', '新製品の提案資料を送付',
+            '2025-01-20', '電話', '提案について詳細説明、来月会議設定',
+            '2025-02-05', '対面', '正式契約締結、プロジェクト開始決定'
+        ],
+
+        # 最低限必須項目のみのパターン
+        [
+            'ミニマル企業', '最小太郎', 'minimal@example.com', '', '',
+            '', '', '', '', '',
+            '', '', '',
+            '', '', '',
+            '', '', ''
+        ],
+
+        # 部分的なデータパターン
+        [
+            'サンプル商事株式会社', '佐藤花子', 'sato@sample-trade.com', '営業部', 'マネージャー',
+            '03-2345-6789', '38', '中', '佐藤', '実施中',
+            '2025-01-10', 'LinkedIn', 'LinkedInでコネクション申請、承認済み',
+            '2025-01-25', 'メール', 'サービス紹介資料送付、検討中',
+            '', '', ''
+        ],
+
+        # 履歴なしパターン
+        [
+            '株式会社サンプルIT', '鈴木一郎', 'suzuki@sample-it.co.jp', 'インフラ部', '課長',
+            '03-1234-5679', '35', '中', '田中', '未実施',
+            '', '', '',
+            '', '', '',
+            '', '', ''
+        ]
+    ]
+
+    # 改良されたカラム名（必須・任意を明示）
+    columns = [
+        '企業名[必須]', '氏名[必須]', 'メール[必須]',
+        '部署[任意]', '役職[任意]', '電話番号[任意]', '年齢[任意]',
+        '優先度[任意:高/中/低]', '担当者[任意]', 'スクリーニング状況[任意:未実施/実施中/実施済み]',
+        '履歴1_日付[任意:YYYY-MM-DD]', '履歴1_手法[任意:メール/電話/LinkedIn等]', '履歴1_備考[任意]',
+        '履歴2_日付[任意:YYYY-MM-DD]', '履歴2_手法[任意:メール/電話/LinkedIn等]', '履歴2_備考[任意]',
+        '履歴3_日付[任意:YYYY-MM-DD]', '履歴3_手法[任意:メール/電話/LinkedIn等]', '履歴3_備考[任意]'
+    ]
+
+    df = pd.DataFrame(sample_data, columns=columns)
     return df.to_csv(index=False, encoding='utf-8-sig')
 
 
@@ -6218,6 +6530,7 @@ def import_company_data(df, company_name_col, industry_col, target_dept_col, dup
     update_count = 0
     error_count = 0
     errors = []
+    skipped_records = []  # スキップされたレコードの詳細を保存
     
     try:
         for _, row in df.iterrows():
@@ -6225,6 +6538,13 @@ def import_company_data(df, company_name_col, industry_col, target_dept_col, dup
             
             # 空の行はスキップ
             if not company_name or company_name.lower() in ['nan', 'null', '']:
+                row_number = _ + 2  # DataFrameのindexは0から始まるが、CSVは1行目がヘッダーなので+2
+                skipped_records.append({
+                    'row': row_number,
+                    'company': '（空白）',
+                    'reason': '企業名が空白または無効です'
+                })
+                skip_count += 1
                 continue
             
             # 重複チェック
@@ -6233,6 +6553,12 @@ def import_company_data(df, company_name_col, industry_col, target_dept_col, dup
             if existing_company.data:
                 # 重複データが存在する場合
                 if duplicate_handling == "重複をスキップ（新規のみ登録）":
+                    row_number = _ + 2
+                    skipped_records.append({
+                        'row': row_number,
+                        'company': company_name,
+                        'reason': '重複企業（既存のデータが存在）'
+                    })
                     skip_count += 1
                     continue
                 elif duplicate_handling == "重複を更新（既存データを更新）":
@@ -6303,21 +6629,26 @@ def import_company_data(df, company_name_col, industry_col, target_dept_col, dup
                         # 部署マスタは廃止：各コンタクトに直接部署名を保存
                         pass
         
-        # 結果表示
-        if success_count > 0 or skip_count > 0 or update_count > 0:
-            result_message = f"📊 企業データ処理結果: 新規登録 {success_count}件"
+        # 結果表示（必ず表示）
+        total_processed = success_count + skip_count + update_count
+        if total_processed > 0:
+            if success_count > 0:
+                st.success(f"✅ 企業データ処理完了: 新規登録 {success_count}件")
+            result_message = f"📊 処理結果詳細: 新規登録 {success_count}件"
             if skip_count > 0:
                 result_message += f", スキップ {skip_count}件"
             if update_count > 0:
                 result_message += f", 更新 {update_count}件"
             st.info(result_message)
+        else:
+            st.warning("⚠️ 処理対象となるデータがありませんでした")
         
-        return success_count + update_count, error_count, errors  # 処理された件数とエラー情報を返す
+        return success_count + update_count, error_count, errors, skipped_records  # 処理された件数とエラー・スキップ情報を返す
         
     except Exception as e:
         errors.append({'row': 'システム', 'message': f"インポート中にエラーが発生しました: {str(e)}"})
         error_count += 1
-        return success_count, error_count, errors
+        return success_count, error_count, errors, skipped_records
 
 
 def import_project_data(df, mapping_config, duplicate_handling):
@@ -6464,41 +6795,126 @@ def import_project_data(df, mapping_config, duplicate_handling):
         return success_count
 
 
+def import_contact_history(row, columns, contact_id):
+    """コンタクトの履歴データをインポート"""
+    try:
+        # 履歴データが含まれているかチェック
+        history_columns = [col for col in columns if '履歴' in str(col)]
+        if not history_columns:
+            return  # 履歴データなし
+
+        # アプローチ手法のマッピングを取得
+        methods_response = supabase.table('approach_methods').select('*').execute()
+        method_mapping = {m['method_name']: m['method_id'] for m in methods_response.data}
+
+        # 履歴データを処理（最大3回分）
+        for i in range(1, 4):
+            date_col = f'履歴{i}_日付[任意:YYYY-MM-DD]'
+            method_col = f'履歴{i}_手法[任意:メール/電話/LinkedIn等]'
+            notes_col = f'履歴{i}_備考[任意]'
+
+            # CSVカラムが存在するかチェック
+            if date_col not in columns or method_col not in columns or notes_col not in columns:
+                continue
+
+            # データを取得
+            approach_date = str(row[date_col]).strip()
+            approach_method = str(row[method_col]).strip()
+            approach_notes = str(row[notes_col]).strip()
+
+            # データが有効かチェック
+            if (not approach_date or approach_date.lower() in ['nan', 'null', ''] or
+                not approach_method or approach_method.lower() in ['nan', 'null', '']):
+                continue
+
+            # 日付の形式チェック
+            try:
+                datetime.strptime(approach_date, '%Y-%m-%d')
+            except ValueError:
+                continue
+
+            # 手法IDを取得
+            method_id = method_mapping.get(approach_method)
+            if not method_id:
+                continue
+
+            # 履歴データを挿入
+            history_data = {
+                'contact_id': int(contact_id),
+                'method_id': int(method_id),
+                'approach_date': approach_date,
+                'approach_order': i,
+                'notes': approach_notes if approach_notes and approach_notes.lower() not in ['nan', 'null', ''] else None,
+                'created_at': datetime.now().isoformat(),
+                'updated_at': datetime.now().isoformat()
+            }
+
+            supabase.table('contact_approaches').insert(history_data).execute()
+
+    except Exception as e:
+        # エラーは無視（履歴データは任意のため）
+        pass
+
+
 def import_contact_data(df, mapping_config, duplicate_handling):
     """コンタクトデータをデータベースにインポート"""
     success_count = 0
     skip_count = 0
     update_count = 0
-    
+    skipped_records = []  # スキップされたレコードの詳細情報
+
     try:
-        for _, row in df.iterrows():
+        for idx, row in df.iterrows():
+            row_number = idx + 2  # CSVの行番号（ヘッダー分+1）
             company_name = str(row[mapping_config['company_name']]).strip()
             full_name = str(row[mapping_config['full_name']]).strip()
             email = str(row[mapping_config['email']]).strip()
-            
+
             # 必須項目のバリデーション（企業名、氏名、メールアドレス）
             if not company_name or not full_name or not email or \
                company_name.lower() in ['nan', 'null', ''] or \
                full_name.lower() in ['nan', 'null', ''] or \
                email.lower() in ['nan', 'null', '']:
+                skipped_records.append({
+                    'row': row_number,
+                    'company': company_name if company_name and company_name.lower() not in ['nan', 'null', ''] else '(空欄)',
+                    'name': full_name if full_name and full_name.lower() not in ['nan', 'null', ''] else '(空欄)',
+                    'email': email if email and email.lower() not in ['nan', 'null', ''] else '(空欄)',
+                    'reason': '必須項目（企業名・氏名・メール）が不足しています'
+                })
+                skip_count += 1
                 continue
             
             # 企業IDを取得
             company_response = supabase.table('target_companies').select('target_company_id').eq('company_name', company_name).execute()
-            
+
             if not company_response.data:
-                st.warning(f"⚠️ 企業「{company_name}」が見つかりません。先に企業データをインポートしてください。")
+                skipped_records.append({
+                    'row': row_number,
+                    'company': company_name,
+                    'name': full_name,
+                    'email': email,
+                    'reason': f'企業「{company_name}」が見つかりません。先に企業データをインポートしてください'
+                })
+                skip_count += 1
                 continue
-            
+
             target_company_id = company_response.data[0]['target_company_id']
             
-            # 重複チェック（氏名 + メールアドレス + 企業名で判定）
-            # より精密な個人特定のため、3つの要素で判定
-            existing_contact = supabase.table('contacts').select('contact_id').eq('target_company_id', target_company_id).eq('full_name', full_name).eq('email_trial_history', email).execute()
+            # 重複チェック（氏名 + メールアドレスで判定）
+            # 企業が異なっても同一人物と判定
+            existing_contact = supabase.table('contacts').select('contact_id').eq('full_name', full_name).eq('email_address', email).execute()
             
             if existing_contact.data:
                 # 重複データが存在する場合
                 if duplicate_handling == "重複をスキップ（新規のみ登録）":
+                    skipped_records.append({
+                        'row': row_number,
+                        'company': company_name,
+                        'name': full_name,
+                        'email': email,
+                        'reason': '重複コンタクト（同一氏名・メールアドレスが既存）'
+                    })
                     skip_count += 1
                     continue
                 elif duplicate_handling == "重複を更新（既存データを更新）":
@@ -6506,8 +6922,8 @@ def import_contact_data(df, mapping_config, duplicate_handling):
                     contact_id = existing_contact.data[0]['contact_id']
                     update_data = {'updated_at': datetime.now().isoformat()}
                     
-                    # メールアドレスを追加（email_trial_historyフィールドを使用）
-                    update_data['email_trial_history'] = email
+                    # メールアドレスを追加（email_addressフィールドを使用）
+                    update_data['email_address'] = email
                     
                     # オプションフィールドを追加
                     optional_fields = {
@@ -6516,7 +6932,7 @@ def import_contact_data(df, mapping_config, duplicate_handling):
                         'age': 'estimated_age',
                         'status': 'screening_status'
                     }
-                    
+
                     for config_key, db_field in optional_fields.items():
                         col_name = mapping_config.get(config_key)
                         if col_name and col_name != '選択しない' and col_name in df.columns:
@@ -6548,7 +6964,7 @@ def import_contact_data(df, mapping_config, duplicate_handling):
             contact_data = {
                 'target_company_id': target_company_id,
                 'full_name': full_name,
-                'email_trial_history': email,  # メールアドレスをemail_trial_historyフィールドに保存
+                'email_address': email,  # メールアドレスをemail_addressフィールドに保存
                 'created_at': datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat()
             }
@@ -6560,7 +6976,7 @@ def import_contact_data(df, mapping_config, duplicate_handling):
                 'age': 'estimated_age',
                 'status': 'screening_status'
             }
-            
+
             for config_key, db_field in optional_fields.items():
                 col_name = mapping_config.get(config_key)
                 if col_name and col_name != '選択しない' and col_name in df.columns:
@@ -6586,18 +7002,33 @@ def import_contact_data(df, mapping_config, duplicate_handling):
             
             # データベースに挿入
             response = supabase.table('contacts').insert(contact_data).execute()
-            
+
             if response.data:
+                contact_id = response.data[0]['contact_id']
                 success_count += 1
+
+                # 履歴データの処理（新規コンタクトのみ）
+                import_contact_history(row, df.columns, contact_id)
         
-        # 結果表示
-        if success_count > 0 or skip_count > 0 or update_count > 0:
-            result_message = f"📊 コンタクトデータ処理結果: 新規登録 {success_count}件"
+        # 結果表示（必ず表示）
+        total_processed = success_count + skip_count + update_count
+        if total_processed > 0:
+            if success_count > 0:
+                st.success(f"✅ コンタクトデータ処理完了: 新規登録 {success_count}件")
+            result_message = f"📊 処理結果詳細: 新規登録 {success_count}件"
             if skip_count > 0:
                 result_message += f", スキップ {skip_count}件"
             if update_count > 0:
                 result_message += f", 更新 {update_count}件"
             st.info(result_message)
+
+            # スキップされたレコードの詳細表示
+            if skipped_records:
+                st.warning("⚠️ スキップされたレコード:")
+                for record in skipped_records:
+                    st.write(f"• 行{record['row']}: {record['company']}・{record['name']} ({record['email']}) - {record['reason']}")
+        else:
+            st.warning("⚠️ 処理対象となるデータがありませんでした")
         
         return success_count + update_count
         
@@ -6666,15 +7097,12 @@ def import_matching_data(df, duplicate_handling):
                 # 3. 候補者の確認/登録
                 full_name = f"{last_name}{first_name}"
                 
-                # 重複チェック（氏名 + メールアドレス + 企業名で判定）
-                # より精密な個人特定のため、3つの要素で判定
-                contact_response = supabase.table('contacts').select('contact_id').eq('company_id', company_id).eq('full_name', full_name).eq('email_trial_history', email).execute()
+                # 重複チェック（氏名 + メールアドレスで判定）
+                # 企業が異なっても同一人物と判定
+                contact_response = supabase.table('contacts').select('contact_id').eq('full_name', full_name).eq('email_address', email).execute()
                 
-                # 転職ケースの確認：同じ氏名+メールアドレスで異なる企業に存在するかチェック
-                same_person_different_company = supabase.table('contacts').select('contact_id, company_id').eq('full_name', full_name).eq('email_trial_history', email).neq('company_id', company_id).execute()
-                if same_person_different_company.data:
-                    # 同一人物の転職と判断される場合の処理（ログとして記録）
-                    st.info(f"💼 {full_name}さん（{email}）の転職を検出しました。新しい企業での登録として処理します。")
+                # 既存のコンタクトがある場合は重複として処理
+                # 氏名+メールアドレスで既に登録されている場合
                 
                 if contact_response.data:
                     contact_id = contact_response.data[0]['contact_id']
@@ -6690,7 +7118,7 @@ def import_matching_data(df, duplicate_handling):
                         update_data = {
                             'position_name': position_name,
                             'profile': profile,
-                            'email_trial_history': email,  # emailをemail_trial_historyフィールドに保存
+                            'email_address': email,  # emailをemail_addressフィールドに保存
                             'updated_at': datetime.now().isoformat()
                         }
                         
@@ -6716,7 +7144,7 @@ def import_matching_data(df, duplicate_handling):
                         'first_name': first_name,
                         'position_name': position_name,
                         'profile': profile,
-                        'email_trial_history': email,  # emailをemail_trial_historyフィールドに保存
+                        'email_address': email,  # emailをemail_addressフィールドに保存
                         'screening_status': screening_status,
                         'primary_screening_comment': screening_comment,
                         'created_at': datetime.now().isoformat(),
@@ -8084,7 +8512,7 @@ def show_data_export():
     
     export_options = {
         "案件別候補者リスト": "project_candidates",
-        "企業別コンタクトリスト": "company_contacts", 
+        "企業別コンタクトリスト": "company_contacts",
         "全データバックアップ": "full_backup"
     }
     
@@ -8363,7 +8791,7 @@ def show_full_backup_export():
     
     backup_tables = {
         "コンタクト（候補者）": "contacts",
-        "案件": "projects", 
+        "案件": "projects",
         "対象企業": "target_companies",
         "クライアント企業": "client_companies",
         "案件マッチング": "project_assignments"
@@ -8469,7 +8897,7 @@ def generate_project_candidates_csv_with_progress(project_id, progress_bar, prog
                     full_name,
                     last_name,
                     first_name,
-                    email_trial_history,
+                    email_address,
                     position_name,
                     profile,
                     screening_status,
@@ -8540,7 +8968,7 @@ def generate_project_candidates_csv_with_progress(project_id, progress_bar, prog
                 contact.get('full_name', '') if contact else '',
                 contact.get('last_name', '') if contact else '',
                 contact.get('first_name', '') if contact else '',
-                contact.get('email_trial_history', '') if contact else '',
+                contact.get('email_address', '') if contact else '',
                 company.get('company_name', '') if company else '',
                 contact.get('position_name', '') if contact else '',
                 contact.get('profile', '') if contact else '',
@@ -8592,7 +9020,7 @@ def generate_all_project_candidates_csv_with_progress(progress_bar, progress_tex
                     full_name,
                     last_name,
                     first_name,
-                    email_trial_history,
+                    email_address,
                     position_name,
                     profile,
                     screening_status,
@@ -8662,7 +9090,7 @@ def generate_all_project_candidates_csv_with_progress(progress_bar, progress_tex
                 contact.get('full_name', '') if contact else '',
                 contact.get('last_name', '') if contact else '',
                 contact.get('first_name', '') if contact else '',
-                contact.get('email_trial_history', '') if contact else '',
+                contact.get('email_address', '') if contact else '',
                 company.get('company_name', '') if company else '',
                 contact.get('position_name', '') if contact else '',
                 contact.get('profile', '') if contact else '',
@@ -8720,7 +9148,7 @@ def generate_company_contacts_csv_with_progress(company_id, progress_bar, progre
                 full_name,
                 last_name,
                 first_name,
-                email_trial_history,
+                email_address,
                 position_name,
                 department_name,
                 profile,
@@ -8778,7 +9206,7 @@ def generate_company_contacts_csv_with_progress(company_id, progress_bar, progre
                 contact.get('full_name', '') if contact else '',
                 contact.get('last_name', '') if contact else '',
                 contact.get('first_name', '') if contact else '',
-                contact.get('email_trial_history', '') if contact else '',
+                contact.get('email_address', '') if contact else '',
                 company.get('company_name', '') if company else '',
                 contact.get('department_name', '') if contact else '',
                 contact.get('position_name', '') if contact else '',
