@@ -634,7 +634,7 @@ def fetch_project_assignments_for_contact(contact_id):
 
 def main():
     st.title("👥 HR Talent Dashboard")
-    st.text("version 0.7.0")
+    st.text("version 0.7.1")
     
     # URLクエリパラメータから現在のページを取得
     query_params = st.query_params
@@ -4362,10 +4362,17 @@ def show_masters():
     # 企業マスタ
     with tabs[0]:
         st.markdown("### 🏢 企業マスタ")
-        
+
+        # フリーワード検索
+        search_keyword = st.text_input(
+            "🔍 検索",
+            placeholder="企業名、URL、担当者名、メールアドレスなどで検索...",
+            key="company_search"
+        )
+
         # 統一企業マスタ（companies）を使用
         companies = masters.get('companies', pd.DataFrame())
-        
+
         if not companies.empty:
             # 企業の役割を取得（project_companiesから）
             try:
@@ -4413,11 +4420,52 @@ def show_masters():
                 
                 if display_data:
                     df_display = pd.DataFrame(display_data)
-                    
+
+                    # company_idを数値型に変換してソート（昇順）
+                    df_display['company_id_numeric'] = pd.to_numeric(df_display['company_id'])
+                    df_display = df_display.sort_values('company_id_numeric')
+                    df_display = df_display.drop('company_id_numeric', axis=1)
+
+                    # keyword_searchesから最新の検索数を取得する関数
+                    def get_keyword_search_count(keyword_searches):
+                        if not keyword_searches:
+                            return 0
+                        if isinstance(keyword_searches, dict):
+                            return 0
+                        if isinstance(keyword_searches, list):
+                            return len(keyword_searches)
+                        return 0
+
+                    # キーワード検索回数をデータフレームに追加
+                    df_display['keyword_search_count'] = df_display['keyword_searches'].apply(get_keyword_search_count)
+
+                    # フリーワード検索の適用
+                    if search_keyword:
+                        # 大文字小文字を区別しない検索
+                        search_lower = search_keyword.lower()
+                        df_display = df_display[
+                            df_display['company_name'].str.lower().str.contains(search_lower, na=False) | 
+                            df_display['company_url'].str.lower().str.contains(search_lower, na=False) | 
+                            df_display['contact_person'].str.lower().str.contains(search_lower, na=False) | 
+                            df_display['contact_email'].str.lower().str.contains(search_lower, na=False) | 
+                            df_display['company_address'].str.lower().str.contains(search_lower, na=False) | 
+                            df_display['notes'].str.lower().str.contains(search_lower, na=False)
+                        ]
+
+                    # 検索結果件数表示
+                    if search_keyword:
+                        st.caption(f"🔍 {len(df_display)}件が見つかりました")
+                    else:
+                        st.caption(f"📊 全{len(df_display)}件")
+
+                    # インデックスをリセットして行番号の混乱を防ぐ
+                    df_display = df_display.reset_index(drop=True)
+
                     # 選択可能なデータフレーム表示
                     selected_company = st.dataframe(
-                        df_display[['company_name', 'roles', 'company_url', 'email_searched', 'linkedin_searched', 'homepage_searched', 'eight_search', 'contact_person', 'contact_email', 'created_at']],
+                        df_display[['company_id', 'company_name', 'roles', 'company_url', 'email_searched', 'linkedin_searched', 'homepage_searched', 'eight_search', 'keyword_search_count', 'contact_person', 'contact_email', 'created_at']],
                         column_config={
+                            'company_id': st.column_config.NumberColumn('ID', width='small'),
                             'company_name': '企業名',
                             'roles': '役割',
                             'company_url': 'URL',
@@ -4425,13 +4473,15 @@ def show_masters():
                             'linkedin_searched': st.column_config.DateColumn('LinkedIn検索'),
                             'homepage_searched': st.column_config.DateColumn('HP検索'),
                             'eight_search': st.column_config.DateColumn('Eight検索'),
+                            'keyword_search_count': st.column_config.NumberColumn('キーワード検索', help='キーワード検索実施回数'),
                             'contact_person': '担当者',
                             'contact_email': 'メール',
                             'created_at': st.column_config.DatetimeColumn('作成日')
                         },
                         width="stretch",
                         on_select="rerun",
-                        selection_mode="single-row"
+                        selection_mode="single-row",
+                        hide_index=True
                     )
             
                     # 選択された企業の編集・削除フォーム
@@ -4465,7 +4515,40 @@ def show_masters():
                             with col4:
                                 edited_homepage_searched = st.date_input("ホームページ検索日", value=pd.to_datetime(selected_row.get('homepage_searched')) if selected_row.get('homepage_searched') else None, format="YYYY-MM-DD")
                                 edited_eight_search = st.date_input("Eight検索日", value=pd.to_datetime(selected_row.get('eight_search')) if selected_row.get('eight_search') else None, format="YYYY-MM-DD")
-                            
+
+                            # キーワード検索履歴の編集
+                            st.markdown("**キーワード検索履歴** (最大5件)")
+                            existing_searches = selected_row.get('keyword_searches', [])
+                            if not isinstance(existing_searches, list):
+                                existing_searches = []
+
+                            keyword_searches_data = []
+                            for i in range(5):
+                                col_k1, col_k2 = st.columns([1, 3])
+                                existing_item = existing_searches[i] if i < len(existing_searches) else {}
+
+                                with col_k1:
+                                    search_date = st.date_input(
+                                        f"検索日 {i+1}",
+                                        value=pd.to_datetime(existing_item.get('searched_at', existing_item.get('date'))) if existing_item.get('searched_at') or existing_item.get('date') else None,
+                                        format="YYYY-MM-DD",
+                                        key=f"keyword_date_{selected_row['company_id']}_{i}"
+                                    )
+
+                                with col_k2:
+                                    keyword = st.text_input(
+                                        f"キーワード {i+1}",
+                                        value=existing_item.get('keyword', ''),
+                                        placeholder="例: AI エンジニア 東京",
+                                        key=f"keyword_text_{selected_row['company_id']}_{i}"
+                                    )
+
+                                if search_date and keyword:
+                                    keyword_searches_data.append({
+                                        "searched_at": search_date.isoformat(),
+                                        "keyword": keyword
+                                    })
+
                             edited_email_search_memo = st.text_area("メール検索メモ", value=selected_row.get('email_search_memo', ''), height=100)
                             
                             form_col1, form_col2 = st.columns(2)
@@ -4485,6 +4568,7 @@ def show_masters():
                                                 'linkedin_searched': edited_linkedin_searched.isoformat() if edited_linkedin_searched else None,
                                                 'homepage_searched': edited_homepage_searched.isoformat() if edited_homepage_searched else None,
                                                 'eight_search': edited_eight_search.isoformat() if edited_eight_search else None,
+                                                'keyword_searches': keyword_searches_data if keyword_searches_data else None,
                                                 'email_search_memo': edited_email_search_memo if edited_email_search_memo else None,
                                                 'updated_at': datetime.now().isoformat()
                                             }
