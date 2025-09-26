@@ -2135,8 +2135,26 @@ def show_projects(use_sample_data=False):
 
 def show_projects_list(use_sample_data=False):
     """案件一覧・検索画面"""
+
+    # 企業マスタから遷移してきたかチェック
+    from_company_master = st.session_state.get('from_company_master', False)
+    selected_project_id = st.session_state.get('selected_project_id', None)
+
+    if from_company_master:
+        # 戻るボタンを表示
+        col1, col2, col3 = st.columns([1, 4, 1])
+        with col1:
+            if st.button("⬅ 企業マスタに戻る", key="back_to_company_master"):
+                st.session_state.selected_page_key = "masters"
+                st.session_state.from_company_master = False
+                # ラジオボタンの選択状態も更新
+                st.session_state.page_radio_index = list({"👥 コンタクト管理": "contacts", "🎯 案件管理": "projects", "🤝 人材マッチング": "matching", "📧 メール管理": "email_management", "📥 データインポート": "import", "📤 データエクスポート": "export", "⚙️ マスタ管理": "masters"}.keys()).index("⚙️ マスタ管理")
+                if 'selected_project_id' in st.session_state:
+                    del st.session_state.selected_project_id
+                st.rerun()
+
     st.markdown("### 📋 案件一覧・検索")
-    
+
     # URLパラメータから選択状態を取得
     query_params = st.query_params
     
@@ -2155,6 +2173,10 @@ def show_projects_list(use_sample_data=False):
         # セッション状態に復元フラグを設定
         st.session_state.restore_project_state = should_restore_state
         st.session_state.restored_project_id = restored_project_id
+    elif from_company_master and selected_project_id:
+        # 企業マスタから遷移した場合はフィルタをリセットして対象案件が見つけやすくする
+        default_status = "すべて"
+        default_company = "すべて"
     else:
         default_status = query_params.get("project_status", "すべて")
         default_company = query_params.get("project_company", "すべて")
@@ -2182,6 +2204,9 @@ def show_projects_list(use_sample_data=False):
         
         if projects_query.data:
             projects_df = pd.DataFrame(projects_query.data)
+            # statusがnullの場合にデフォルト値を設定
+            if 'status' in projects_df.columns:
+                projects_df['status'] = projects_df['status'].fillna('未設定')
         else:
             projects_df = pd.DataFrame()
     except Exception as e:
@@ -2658,7 +2683,33 @@ def show_projects_list(use_sample_data=False):
             
             # 選択された案件を取得（単一選択）
             selected_project = None
-            if st.session_state.selected_project_single is not None:
+
+            # 企業マスタからの遷移時に自動選択
+            if from_company_master and selected_project_id:
+                st.info(f"🔍 案件ID {selected_project_id} を検索中...")
+                found = False
+                for i, (_, row) in enumerate(filtered_projects.iterrows()):
+                    if str(row.get('project_id')) == str(selected_project_id):
+                        st.session_state.selected_project_single = i
+                        # selectboxの選択状態も同期（project_optionsの1番目は"選択してください"なので+1）
+                        st.session_state.project_selector = i + 1
+
+                        # 選択された案件が含まれるページに移動
+                        target_page = (i // items_per_page) + 1
+                        st.session_state.project_current_page = target_page
+
+                        selected_project = row
+                        found = True
+                        st.success(f"✅ 案件「{row.get('project_name', 'N/A')}」を選択しました")
+                        break
+
+                if not found:
+                    st.warning(f"⚠️ 案件ID {selected_project_id} が見つかりませんでした。フィルタリング条件を確認してください。")
+
+                # 一度処理したらフラグをクリア
+                if 'selected_project_id' in st.session_state:
+                    del st.session_state.selected_project_id
+            elif st.session_state.selected_project_single is not None:
                 if st.session_state.selected_project_single < len(filtered_projects):
                     selected_project = filtered_projects.iloc[st.session_state.selected_project_single]
             
@@ -4363,12 +4414,29 @@ def show_masters():
     with tabs[0]:
         st.markdown("### 🏢 企業マスタ")
 
+        # 企業マスタから戻ってきた場合の自動検索設定
+        auto_search_value = ""
+        if hasattr(st.session_state, 'selected_company_for_return') and st.session_state.selected_company_for_return:
+            return_info = st.session_state.selected_company_for_return
+            # 企業IDから企業名を取得
+            companies_temp = masters.get('companies', pd.DataFrame())
+            if not companies_temp.empty:
+                matching_company = companies_temp[companies_temp['company_id'] == return_info.get('company_id')]
+                if not matching_company.empty:
+                    auto_search_value = matching_company.iloc[0]['company_name']
+                    st.info(f"📌 案件一覧から戻りました。企業「{auto_search_value}」で検索フィルタを設定しました。")
+
         # フリーワード検索
         search_keyword = st.text_input(
             "🔍 検索",
+            value=auto_search_value,
             placeholder="企業名、URL、担当者名、メールアドレスなどで検索...",
             key="company_search"
         )
+
+        # 自動検索が設定された場合、復元用の情報をクリア
+        if auto_search_value and hasattr(st.session_state, 'selected_company_for_return'):
+            st.session_state.selected_company_for_return = None
 
         # 統一企業マスタ（companies）を使用
         companies = masters.get('companies', pd.DataFrame())
@@ -4461,33 +4529,186 @@ def show_masters():
                     # インデックスをリセットして行番号の混乱を防ぐ
                     df_display = df_display.reset_index(drop=True)
 
-                    # 選択可能なデータフレーム表示
-                    selected_company = st.dataframe(
-                        df_display[['company_id', 'company_name', 'roles', 'company_url', 'email_searched', 'linkedin_searched', 'homepage_searched', 'eight_search', 'keyword_search_count', 'contact_person', 'contact_email', 'created_at']],
-                        column_config={
-                            'company_id': st.column_config.NumberColumn('ID', width='small'),
-                            'company_name': '企業名',
-                            'roles': '役割',
-                            'company_url': 'URL',
-                            'email_searched': st.column_config.DateColumn('メール検索'),
-                            'linkedin_searched': st.column_config.DateColumn('LinkedIn検索'),
-                            'homepage_searched': st.column_config.DateColumn('HP検索'),
-                            'eight_search': st.column_config.DateColumn('Eight検索'),
-                            'keyword_search_count': st.column_config.NumberColumn('キーワード検索', help='キーワード検索実施回数'),
-                            'contact_person': '担当者',
-                            'contact_email': 'メール',
-                            'created_at': st.column_config.DatetimeColumn('作成日')
-                        },
-                        width="stretch",
-                        on_select="rerun",
-                        selection_mode="single-row",
-                        hide_index=True
-                    )
-            
+
+                    # 企業選択状態の管理
+                    if 'selected_company_single' not in st.session_state:
+                        st.session_state.selected_company_single = None
+
+                    # ページネーション設定
+                    col_pagesize1, col_pagesize2, col_pagesize3 = st.columns([2, 1, 2])
+                    with col_pagesize2:
+                        items_per_page = st.selectbox(
+                            "表示件数",
+                            options=[10, 20, 50, 100],
+                            index=1,  # デフォルト20件
+                            key="company_items_per_page"
+                        )
+
+                    total_items = len(df_display)
+                    total_pages = max(1, (total_items + items_per_page - 1) // items_per_page)
+
+                    # 現在のページを取得（セッションステートから）
+                    if 'company_current_page' not in st.session_state:
+                        st.session_state.company_current_page = 1
+
+                    current_page = st.session_state.company_current_page
+
+                    # ページ数が変更された場合の調整
+                    if current_page > total_pages:
+                        st.session_state.company_current_page = total_pages
+                        current_page = total_pages
+
+                    # 案件一覧から戻ってきた場合の自動選択とページ移動
+                    if auto_search_value and search_keyword == auto_search_value:
+                        # 検索結果から該当企業を自動選択
+                        for i, (_, row) in enumerate(df_display.iterrows()):
+                            if row.get('company_name') == auto_search_value:
+                                st.session_state.selected_company_single = i
+                                # 選択された企業が含まれるページに移動
+                                target_page = (i // items_per_page) + 1
+                                st.session_state.company_current_page = target_page
+                                current_page = target_page
+                                st.success(f"✅ 企業「{auto_search_value}」を選択しました")
+                                break
+
+                    # ページネーション表示
+                    if total_pages > 1:
+                        st.markdown(f"**ページ {current_page}/{total_pages}** | **全{total_items}件** | **表示件数: {items_per_page}件**")
+
+                        col_nav1, col_nav2, col_nav3, col_nav4, col_nav5 = st.columns(5)
+
+                        with col_nav1:
+                            if st.button("⏪ 最初", key="company_first_page", disabled=current_page <= 1):
+                                st.session_state.company_current_page = 1
+                                st.rerun()
+
+                        with col_nav2:
+                            if st.button("◀ 前", key="company_prev_page", disabled=current_page <= 1):
+                                st.session_state.company_current_page = current_page - 1
+                                st.rerun()
+
+                        with col_nav3:
+                            # ページ番号入力
+                            new_page = st.number_input(
+                                "ページ",
+                                min_value=1,
+                                max_value=total_pages,
+                                value=current_page,
+                                key="company_page_input"
+                            )
+                            if new_page != current_page:
+                                st.session_state.company_current_page = new_page
+                                st.rerun()
+
+                        with col_nav4:
+                            if st.button("▶ 次", key="company_next_page", disabled=current_page >= total_pages):
+                                st.session_state.company_current_page = current_page + 1
+                                st.rerun()
+
+                        with col_nav5:
+                            if st.button("最後 ⏩", key="company_last_page", disabled=current_page >= total_pages):
+                                st.session_state.company_current_page = total_pages
+                                st.rerun()
+
+                        st.markdown("---")
+
+                    # 現在のページのデータを取得
+                    start_idx = (current_page - 1) * items_per_page
+                    end_idx = min(start_idx + items_per_page, total_items)
+                    page_companies = df_display.iloc[start_idx:end_idx]
+
+                    # 選択解除ボタン
+                    col_btn1, col_btn2 = st.columns([1, 3])
+                    with col_btn1:
+                        if st.button("選択解除", key="deselect_company"):
+                            st.session_state.selected_company_single = None
+                            st.rerun()
+                    with col_btn2:
+                        if st.session_state.selected_company_single is not None:
+                            st.write(f"✅ 選択中: 1件")
+                        else:
+                            st.write("選択なし")
+
+                    # カスタムUI表示（案件管理と同様）
+                    if not page_companies.empty:
+                        # ヘッダー行
+                        header_cols = st.columns([1, 1, 3, 1.5, 1, 1, 1, 1, 1, 1.5, 1.5, 1.5])
+                        headers = ["選択", "ID", "企業名", "役割", "URL", "メール検索", "LinkedIn検索", "HP検索", "Eight検索", "キーワード検索", "担当者", "メール"]
+                        for i, header in enumerate(headers):
+                            with header_cols[i]:
+                                st.write(f"**{header}**")
+
+                        st.markdown("---")
+
+                        # 各行を表示
+                        for page_idx, (idx, company) in enumerate(page_companies.iterrows()):
+                            actual_idx = start_idx + page_idx
+                            is_selected = st.session_state.selected_company_single == actual_idx
+
+                            # 行の色付け
+                            if is_selected:
+                                st.markdown('<div style="background-color: #e6f3ff; padding: 5px; border-radius: 5px; margin: 2px 0;">', unsafe_allow_html=True)
+
+                            row_cols = st.columns([1, 1, 3, 1.5, 1, 1, 1, 1, 1, 1.5, 1.5, 1.5])
+
+                            with row_cols[0]:
+                                if st.button("●" if is_selected else "○", key=f"select_company_{actual_idx}", help="クリックして選択"):
+                                    if is_selected:
+                                        st.session_state.selected_company_single = None
+                                    else:
+                                        st.session_state.selected_company_single = actual_idx
+                                    st.rerun()
+
+                            with row_cols[1]:
+                                st.write(str(company.get('company_id', '')))
+
+                            with row_cols[2]:
+                                st.write(str(company.get('company_name', '')))
+
+                            with row_cols[3]:
+                                st.write(str(company.get('roles', '')))
+
+                            with row_cols[4]:
+                                if company.get('company_url'):
+                                    st.markdown(f"[🔗]({company['company_url']})")
+                                else:
+                                    st.write("None")
+
+                            with row_cols[5]:
+                                st.write(str(company.get('email_searched', 'None'))[:10] if company.get('email_searched') else 'None')
+
+                            with row_cols[6]:
+                                st.write(str(company.get('linkedin_searched', 'None'))[:10] if company.get('linkedin_searched') else 'None')
+
+                            with row_cols[7]:
+                                st.write(str(company.get('homepage_searched', 'None'))[:10] if company.get('homepage_searched') else 'None')
+
+                            with row_cols[8]:
+                                st.write(str(company.get('eight_search', 'None'))[:10] if company.get('eight_search') else 'None')
+
+                            with row_cols[9]:
+                                st.write(str(company.get('keyword_search_count', '0')))
+
+                            with row_cols[10]:
+                                st.write(str(company.get('contact_person', 'None')))
+
+                            with row_cols[11]:
+                                st.write(str(company.get('contact_email', 'None')))
+
+                            if is_selected:
+                                st.markdown('</div>', unsafe_allow_html=True)
+
+                        # 選択された企業を取得
+                        selected_row = None
+                        if st.session_state.selected_company_single is not None:
+                            if st.session_state.selected_company_single < len(df_display):
+                                selected_row = df_display.iloc[st.session_state.selected_company_single]
+                    else:
+                        st.info("検索条件に一致する企業がありません")
+                        selected_row = None
+
                     # 選択された企業の編集・削除フォーム
-                    if selected_company.selection.rows:
-                        selected_idx = selected_company.selection.rows[0]
-                        selected_row = df_display.iloc[selected_idx]
+                    if selected_row is not None:
                         
                         st.markdown("---")
                         st.markdown("### ✏️ 企業情報編集")
@@ -4550,7 +4771,7 @@ def show_masters():
                                     })
 
                             edited_email_search_memo = st.text_area("メール検索メモ", value=selected_row.get('email_search_memo', ''), height=100)
-                            
+
                             form_col1, form_col2 = st.columns(2)
                             with form_col1:
                                 if st.form_submit_button("💾 更新", type="primary"):
@@ -4617,8 +4838,102 @@ def show_masters():
                                                 st.error("❌ 削除に失敗しました")
                                     except Exception as e:
                                         ErrorHandler.handle_database_error(e)
-                        
+
                         st.info("💡 削除は関連するコンタクトや案件で使用されていない場合のみ可能です。")
+
+                        # 関連案件の表示
+                        with st.expander("📋 関連案件を表示", expanded=False):
+                            # 依頼企業としての案件を取得
+                            client_projects_query = supabase.table('project_companies').select(
+                                'project_id'
+                            ).eq('company_id', selected_row['company_id']).eq('role', 'client').execute()
+
+                            # ターゲット企業としての案件を取得
+                            target_projects_query = supabase.table('project_companies').select(
+                                'project_id'
+                            ).eq('company_id', selected_row['company_id']).eq('role', 'target').execute()
+
+                            col_client, col_target = st.columns(2)
+
+                            with col_client:
+                                st.markdown("🏢 **依頼企業として関わる案件**")
+                                if client_projects_query.data:
+                                    # プロジェクトIDのリストを取得
+                                    client_project_ids = [p['project_id'] for p in client_projects_query.data]
+
+                                    # プロジェクト情報を別途取得
+                                    if client_project_ids:
+                                        projects_data = supabase.table('projects').select('*').in_('project_id', client_project_ids).execute()
+
+                                        for project in projects_data.data:
+                                            status_emoji = {
+                                                'リード': '🔵',
+                                                '提案中': '🟡',
+                                                '受注': '🟢',
+                                                '失注': '⚪',
+                                                '保留': '🟠'
+                                            }.get(project.get('project_status', ''), '🔵')
+
+                                            with st.container():
+                                                col1, col2 = st.columns([3, 1])
+                                                with col1:
+                                                    st.write(f"{status_emoji} {project['project_name']}")
+                                                    st.caption(f"作成: {project['created_at'][:10] if project.get('created_at') else ''}")
+                                                with col2:
+                                                    if st.button("🔗 開く", key=f"open_client_project_{project['project_id']}"):
+                                                        st.session_state.selected_page_key = "projects"
+                                                        st.session_state.selected_project_id = project['project_id']
+                                                        st.session_state.from_company_master = True
+                                                        # 選択された企業情報を保存（戻る時のため）
+                                                        st.session_state.selected_company_for_return = {
+                                                            'company_id': selected_row.get('company_id'),
+                                                            'selected_idx': st.session_state.selected_company_single
+                                                        }
+                                                        # ラジオボタンの選択状態も更新
+                                                        st.session_state.page_radio_index = list({"👥 コンタクト管理": "contacts", "🎯 案件管理": "projects", "🤝 人材マッチング": "matching", "📧 メール管理": "email_management", "📥 データインポート": "import", "📤 データエクスポート": "export", "⚙️ マスタ管理": "masters"}.keys()).index("🎯 案件管理")
+                                                        st.rerun()
+                                else:
+                                    st.info("依頼企業としての案件はありません")
+
+                            with col_target:
+                                st.markdown("🎯 **ターゲット企業として関わる案件**")
+                                if target_projects_query.data:
+                                    # プロジェクトIDのリストを取得
+                                    target_project_ids = [p['project_id'] for p in target_projects_query.data]
+
+                                    # プロジェクト情報を別途取得
+                                    if target_project_ids:
+                                        projects_data = supabase.table('projects').select('*').in_('project_id', target_project_ids).execute()
+
+                                        for project in projects_data.data:
+                                            status_emoji = {
+                                                'リード': '🔵',
+                                                '提案中': '🟡',
+                                                '受注': '🟢',
+                                                '失注': '⚪',
+                                                '保留': '🟠'
+                                            }.get(project.get('project_status', ''), '🔵')
+
+                                            with st.container():
+                                                col1, col2 = st.columns([3, 1])
+                                                with col1:
+                                                    st.write(f"{status_emoji} {project['project_name']}")
+                                                    st.caption(f"作成: {project['created_at'][:10] if project.get('created_at') else ''}")
+                                                with col2:
+                                                    if st.button("🔗 開く", key=f"open_target_project_{project['project_id']}"):
+                                                        st.session_state.selected_page_key = "projects"
+                                                        st.session_state.selected_project_id = project['project_id']
+                                                        st.session_state.from_company_master = True
+                                                        # 選択された企業情報を保存（戻る時のため）
+                                                        st.session_state.selected_company_for_return = {
+                                                            'company_id': selected_row.get('company_id'),
+                                                            'selected_idx': st.session_state.selected_company_single
+                                                        }
+                                                        # ラジオボタンの選択状態も更新
+                                                        st.session_state.page_radio_index = list({"👥 コンタクト管理": "contacts", "🎯 案件管理": "projects", "🤝 人材マッチング": "matching", "📧 メール管理": "email_management", "📥 データインポート": "import", "📤 データエクスポート": "export", "⚙️ マスタ管理": "masters"}.keys()).index("🎯 案件管理")
+                                                        st.rerun()
+                                else:
+                                    st.info("ターゲット企業としての案件はありません")
                 
                 else:
                     st.info("企業マスタにデータがありません。")
