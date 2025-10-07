@@ -3212,19 +3212,6 @@ def show_projects_list(use_sample_data=False):
                                             else:
                                                 st.text("⭐ 優先度: 未設定")
 
-                                            # companiesテーブルのメアドサーチ完了日を表示
-                                            email_searched_date = None
-                                            try:
-                                                target_result = supabase.table('target_companies').select('email_searched').eq('company_name', company.get('company_name')).execute()
-                                                if target_result.data and len(target_result.data) > 0:
-                                                    email_searched_date = target_result.data[0].get('email_searched')
-                                            except Exception:
-                                                pass
-                                            
-                                            if email_searched_date:
-                                                st.text(f"📧 メアドサーチ完了日: {email_searched_date}")
-                                            else:
-                                                st.text("📧 メアドサーチ完了日: 未設定")
 
                                         # メモ情報（companiesテーブルから取得）
                                         st.markdown("**📝 メモ情報**")
@@ -3422,8 +3409,6 @@ def show_projects_list(use_sample_data=False):
                                         st.markdown("**🔍 検索履歴**")
                                         search_col1, search_col2 = st.columns(2)
                                         with search_col1:
-                                            if target_company_data.get('email_searched'):
-                                                st.text(f"📧 メアドサーチ完了日: {target_company_data['email_searched']}")
                                             if target_company_data.get('linkedin_searched'):
                                                 st.text(f"💼 LinkedInサーチ: {target_company_data['linkedin_searched']}")
                                         with search_col2:
